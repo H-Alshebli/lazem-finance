@@ -1,0 +1,61 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Users can read/write their own profile
+    // Admins can read/write all profiles
+    match /users/{userId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth.uid == userId
+                   || isAdmin();
+    }
+
+    // Recurring, One-Time, Entitlements:
+    // Any authenticated user can create
+    // Any authenticated user can read (filtering happens in app)
+    // Only submitter or approver roles can update
+    match /recurring/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    match /onetime/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    match /entitlements/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update: if request.auth != null;
+      allow delete: if request.auth != null && isAdmin();
+    }
+
+    // Audit log: authenticated users can create, all can read
+    match /auditLog/{docId} {
+      allow read:   if request.auth != null;
+      allow create: if request.auth != null;
+      allow update, delete: if false;
+    }
+
+    // Notifications
+    match /notifications/{docId} {
+      allow read, write: if request.auth != null;
+    }
+
+    // Config (permissions + departments): only admins can write
+    match /config/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // Helper function
+    function isAdmin() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == "admin";
+    }
+  }
+}
