@@ -1,10 +1,17 @@
+import { useEffect } from "react";
 import { useAuth } from "./context/AuthContext";
 import { useData } from "./context/DataContext";
-import AppCore from "./AppCore";
+import AppCore, { AuthGate } from "./AppCore";
 
 export default function App() {
   const auth = useAuth();
   const data = useData();
+
+  // Inject Firebase auth functions into AuthGate so the login page uses Firebase
+  useEffect(() => {
+    AuthGate._firebaseLogin    = auth.login;
+    AuthGate._firebaseRegister = auth.register;
+  }, [auth.login, auth.register]);
 
   if (auth.isLoading) {
     return (

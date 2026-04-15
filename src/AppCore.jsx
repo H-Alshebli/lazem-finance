@@ -214,7 +214,7 @@ const SEED_USERS = {
   "hr@lazem.sa":      { id: "u7", name: "Nora Al-Shammari",  email: "hr@lazem.sa",       password: "hr123",       role: "hr",        avatar: "N" },
 };
 
-function AuthGate({ children }) {
+export function AuthGate({ children }) {
   const [authUsers, setAuthUsers] = useState(SEED_USERS);
   const [currentUser, setCurrentUser] = useState(null);
 
@@ -239,8 +239,22 @@ function AuthGate({ children }) {
   const [regSuccess, setRegSuccess] = useState("");
   const [showPass, setShowPass] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     setLoginErr("");
+    // Firebase mode — use injected login function
+    if (AuthGate._firebaseLogin) {
+      try {
+        await AuthGate._firebaseLogin(loginForm.email.trim(), loginForm.password);
+        // Firebase auth state change will handle the rest via App.jsx
+      } catch(e) {
+        const msg = e.code === "auth/user-not-found" || e.code === "auth/invalid-credential" || e.code === "auth/wrong-password"
+          ? "Incorrect email or password." : e.code === "auth/invalid-email"
+          ? "Invalid email address." : "Sign in failed: " + (e.message || e.code);
+        setLoginErr(msg);
+      }
+      return;
+    }
+    // Standalone mode — internal auth
     const key = loginForm.email.toLowerCase().trim();
     const user = authUsers[key];
     if (!user) return setLoginErr("No account found with this email.");
@@ -248,12 +262,28 @@ function AuthGate({ children }) {
     setCurrentUser(user);
   };
 
-  const handleRegister = () => {
+  const handleRegister = async () => {
     setRegErr(""); setRegSuccess("");
     if (!regForm.name.trim()) return setRegErr("Full name is required.");
     if (!regForm.email.includes("@")) return setRegErr("Enter a valid email address.");
     if (regForm.password.length < 6) return setRegErr("Password must be at least 6 characters.");
     if (regForm.password !== regForm.confirm) return setRegErr("Passwords do not match.");
+    // Firebase mode
+    if (AuthGate._firebaseRegister) {
+      try {
+        await AuthGate._firebaseRegister(regForm.email.trim(), regForm.password, regForm.name.trim());
+        setRegSuccess("Account created! Signing you in...");
+        setRegForm({ name: "", email: "", password: "", confirm: "" });
+        setTimeout(() => { setScreen("login"); setRegSuccess(""); }, 1500);
+      } catch(e) {
+        const msg = e.code === "auth/email-already-in-use"
+          ? "An account with this email already exists."
+          : "Registration failed: " + (e.message || e.code);
+        setRegErr(msg);
+      }
+      return;
+    }
+    // Standalone mode
     const key = regForm.email.toLowerCase().trim();
     if (authUsers[key]) return setRegErr("An account with this email already exists.");
     const newUser = {
