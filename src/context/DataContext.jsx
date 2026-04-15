@@ -79,42 +79,74 @@ export function DataProvider({ children }) {
 
   const unreadCount = notifications.filter(n => !n.read).length;
 
+  // Update a user's role in Firestore
+  const setFirebaseUserRole = async (userId, newRole) => {
+    const { setDoc, doc } = await import("firebase/firestore");
+    const { db } = await import("../firebase/config");
+    await setDoc(doc(db, "users", userId), { role: newRole }, { merge: true });
+  };
+
+  // Smart setRecurring — detects new items vs updates
+  const smartSetRecurring = (fn) => {
+    const newItems = typeof fn === "function" ? fn(recurring) : fn;
+    newItems.forEach(item => {
+      const exists = recurring.find(r => r.id === item.id);
+      if (!exists) {
+        // New item — add to Firestore (strip local id)
+        const { id, ...rest } = item;
+        addItem(COL.recurring, rest);
+      } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
+        // Changed item — update in Firestore
+        updateItem(COL.recurring, item.id, item);
+      }
+    });
+  };
+
+  const smartSetOnetime = (fn) => {
+    const newItems = typeof fn === "function" ? fn(onetime) : fn;
+    newItems.forEach(item => {
+      const exists = onetime.find(o => o.id === item.id);
+      if (!exists) {
+        const { id, ...rest } = item;
+        addItem(COL.onetime, rest);
+      } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
+        updateItem(COL.onetime, item.id, item);
+      }
+    });
+  };
+
+  const smartSetEntitlements = (fn) => {
+    const newItems = typeof fn === "function" ? fn(entitlements) : fn;
+    newItems.forEach(item => {
+      const exists = entitlements.find(e => e.id === item.id);
+      if (!exists) {
+        const { id, ...rest } = item;
+        addItem(COL.entitlements, rest);
+      } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
+        updateItem(COL.entitlements, item.id, item);
+      }
+    });
+  };
+
   return (
     <DataContext.Provider value={{
       // Data
       recurring, onetime, entitlements, auditLog, notifications,
       permissions, deptConfig, allUsers, unreadCount,
-      // Recurring
+      // Mutations
       addRecurring, updateRecurring, deleteRecurring,
-      setRecurring: (fn) => {
-        // For bulk imports — write all to Firestore
-        const items = typeof fn === "function" ? fn(recurring) : fn;
-        items.forEach(item => {
-          if (!item.id || !item.firestoreId) {
-            addItem(COL.recurring, item);
-          }
-        });
-      },
-      // Onetime
       addOnetime, updateOnetime,
-      setOnetime: (fn) => {
-        const items = typeof fn === "function" ? fn(onetime) : fn;
-        items.forEach(item => {
-          if (item.id) updateItem(COL.onetime, item.id, item);
-        });
-      },
-      // Entitlements
       addEntitlement, updateEntitlement,
-      setEntitlements: (fn) => {
-        const items = typeof fn === "function" ? fn(entitlements) : fn;
-        items.forEach(item => {
-          if (item.id) updateItem(COL.entitlements, item.id, item);
-        });
-      },
-      // Other
+      setRecurring: smartSetRecurring,
+      setOnetime: smartSetOnetime,
+      setEntitlements: smartSetEntitlements,
+      setAuditLog: () => {},
+      setNotifs: () => {},
+      setUnreadCount: () => {},
       logAudit, addNotification, dismissNotification, dismissAllNotifications,
       setPermissions: savePerms,
       setDeptConfig: saveDepts,
+      setFirebaseUserRole,
     }}>
       {children}
     </DataContext.Provider>

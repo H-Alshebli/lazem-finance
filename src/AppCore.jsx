@@ -428,14 +428,56 @@ function AuthGate({ children }) {
   );
 }
 
-// When used standalone (claude.ai artifact): uses internal AuthGate
-// When used in production (Vercel + Firebase): receives firebaseUser/firebaseLogout from App.jsx
-export default function AppCore({ firebaseUser, firebaseLogout } = {}) {
-  if (firebaseUser) {
-    // Firebase mode — auth handled externally, data from Firestore via DataContext
-    return <AppInnerFirebase currentUser={firebaseUser} logout={firebaseLogout} />;
+export default function AppCore({ firebaseUser, firebaseLogout, firebaseData, firebaseAllUsers, firebaseSetAuthUsers } = {}) {
+  if (firebaseUser && firebaseData) {
+    // ── FIREBASE / PRODUCTION MODE ──
+    const authUsers = {};
+    (firebaseAllUsers || []).forEach(u => { authUsers[u.email] = u; });
+
+    const shared = {
+      recurring:       firebaseData.recurring      || [],
+      onetime:         firebaseData.onetime        || [],
+      entitlements:    firebaseData.entitlements   || [],
+      auditLog:        firebaseData.auditLog       || [],
+      notifs:          firebaseData.notifications  || [],
+      unreadCount:     firebaseData.unreadCount    || 0,
+      permissions:     firebaseData.permissions    || {},
+      deptConfig:      firebaseData.deptConfig     || [],
+      setRecurring:    firebaseData.setRecurring,
+      setOnetime:      firebaseData.setOnetime,
+      setEntitlements: firebaseData.setEntitlements,
+      setAuditLog:     () => {},
+      setNotifs:       () => {},
+      setUnreadCount:  () => {},
+      setPermissions:  firebaseData.setPermissions,
+      setDeptConfig:   firebaseData.setDeptConfig,
+    };
+
+    const setAuthUsers = (updater) => {
+      // Handle role changes from Permissions page
+      const prev = {};
+      (firebaseAllUsers || []).forEach(u => { prev[u.email] = u; });
+      const next = typeof updater === "function" ? updater(prev) : updater;
+      Object.entries(next).forEach(([email, user]) => {
+        const original = prev[email];
+        if (original && original.role !== user.role && firebaseSetAuthUsers) {
+          firebaseSetAuthUsers(user.id, user.role);
+        }
+      });
+    };
+
+    return (
+      <AppInner
+        currentUser={firebaseUser}
+        logout={firebaseLogout}
+        authUsers={authUsers}
+        setAuthUsers={setAuthUsers}
+        shared={shared}
+      />
+    );
   }
-  // Standalone mode — internal auth + in-memory state
+
+  // ── STANDALONE MODE (claude.ai artifact) ──
   return (
     <AuthGate>
       {(currentUser, logout, authUsers, setAuthUsers, shared) => (
@@ -452,51 +494,7 @@ export default function AppCore({ firebaseUser, firebaseLogout } = {}) {
 // ═══════════════════════════════════════════════════════════════════
 // FIREBASE MODE WRAPPER — uses DataContext instead of in-memory state
 // ═══════════════════════════════════════════════════════════════════
-function AppInnerFirebase({ currentUser, logout }) {
-  // In production: pull live Firestore data from DataContext
-  // useDataHook is injected from App.jsx via the __dataHook global
-  const dataHook = window.__lazem_useData || (() => ({}));
-  const {
-    recurring, onetime, entitlements, auditLog, notifications,
-    permissions, deptConfig, allUsers, unreadCount,
-    updateRecurring, updateOnetime, updateEntitlement,
-    logAudit, addNotification, dismissNotification, dismissAllNotifications,
-    setPermissions, setDeptConfig,
-  } = dataHook();
 
-  // Fallback to empty if DataContext not available (should not happen in prod)
-  const shared = {
-    recurring:      recurring      || [],
-    onetime:        onetime        || [],
-    entitlements:   entitlements   || [],
-    auditLog:       auditLog       || [],
-    notifs:         notifications  || [],
-    unreadCount:    unreadCount    || 0,
-    permissions:    permissions    || {},
-    deptConfig:     deptConfig     || [],
-    setRecurring:   (fn) => { const items = typeof fn === "function" ? fn(recurring||[]) : fn; items.forEach(i => i.id && updateRecurring?.(i.id, i)); },
-    setOnetime:     (fn) => { const items = typeof fn === "function" ? fn(onetime||[]) : fn; items.forEach(i => i.id && updateOnetime?.(i.id, i)); },
-    setEntitlements:(fn) => { const items = typeof fn === "function" ? fn(entitlements||[]) : fn; items.forEach(i => i.id && updateEntitlement?.(i.id, i)); },
-    setAuditLog:    () => {},
-    setNotifs:      () => {},
-    setUnreadCount: () => {},
-    setPermissions: setPermissions  || (() => {}),
-    setDeptConfig:  setDeptConfig   || (() => {}),
-  };
-
-  const authUsers = {};
-  (allUsers || []).forEach(u => { authUsers[u.email] = u; });
-
-  return (
-    <AppInner
-      currentUser={currentUser}
-      logout={logout}
-      authUsers={authUsers}
-      setAuthUsers={() => {}}
-      shared={shared}
-    />
-  );
-}
 function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   const [view, setView] = useState("dashboard");
   const [userRole, setUserRole] = useState(currentUser.role);

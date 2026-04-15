@@ -2,13 +2,11 @@ import { useAuth } from "./context/AuthContext";
 import { useData } from "./context/DataContext";
 import AppCore from "./AppCore";
 
-// Inject useData hook so AppCore can access Firestore data
-window.__lazem_useData = useData;
-
 export default function App() {
-  const { currentUser, userProfile, logout, isLoading } = useAuth();
+  const auth = useAuth();
+  const data = useData();
 
-  if (isLoading) {
+  if (auth.isLoading) {
     return (
       <div style={{
         minHeight: "100vh", background: "#0B0F1A",
@@ -23,9 +21,17 @@ export default function App() {
     );
   }
 
-  const authUser = currentUser && userProfile
-    ? { ...userProfile, uid: currentUser.uid, email: currentUser.email }
+  const authUser = auth.currentUser && auth.userProfile
+    ? { ...auth.userProfile, uid: auth.currentUser.uid, email: auth.currentUser.email }
     : null;
 
-  return <AppCore firebaseUser={authUser} firebaseLogout={logout} />;
+  return (
+    <AppCore
+      firebaseUser={authUser}
+      firebaseLogout={auth.logout}
+      firebaseData={data}
+      firebaseAllUsers={data.allUsers}
+      firebaseSetAuthUsers={data.setFirebaseUserRole}
+    />
+  );
 }
