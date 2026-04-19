@@ -95,3 +95,96 @@ export const C = {
   green: "#10B981", red: "#EF4444", orange: "#F97316",
   text: "#E8EDF5", muted: "#6B7A99", subtle: "#2A3655", purple: "#8B5CF6",
 };
+
+export const statusConfig = {
+  upcoming:         { label:"Upcoming",              color:"#3B82F6" },
+  overdue:          { label:"Overdue",               color:"#EF4444" },
+  paid:             { label:"Paid",                  color:"#10B981" },
+  pending_approval: { label:"Pending Approval",      color:"#F97316" },
+  pending_manager:  { label:"Pending Manager",       color:"#F97316" },
+  pending_ceo_1:    { label:"Pending CEO",           color:"#EC4899" },
+  pending_finance:  { label:"Pending Finance",       color:"#F59E0B" },
+  pending_ceo_2:    { label:"Pending CEO – Release", color:"#EC4899" },
+  approved:         { label:"Awaiting Payment",      color:"#8B5CF6" },
+  pending_pay:      { label:"Pay & Docs",            color:"#8B5CF6" },
+  paid_onetime:     { label:"Paid",                  color:"#10B981" },
+  rejected:         { label:"Rejected",              color:"#EF4444" },
+  pending_vp:       { label:"Pending VP",            color:"#14B8A6" },
+  pending_hr:       { label:"Pending HR",            color:"#A78BFA" },
+  pending_pay_rec:     { label:"Pay & Docs",          color:"#8B5CF6" },
+  pending_ceo_1_rec:   { label:"Pending CEO",         color:"#EC4899" },
+  pending_ceo_2_rec:   { label:"Pending CEO – Release",color:"#EC4899" },
+  pending_finance_rec: { label:"Pending Finance",     color:"#F59E0B" },
+  pending_invoice:     { label:"Upload Invoice",      color:"#14B8A6" },
+  pending_schedule:    { label:"Schedule Payment",    color:"#8B5CF6" },
+  pending_bank:        { label:"Bank Release",        color:"#3B82F6" },
+  pending_receipt:     { label:"Upload Receipt",      color:"#10B981" },
+};
+
+export const priorityConfig = {
+  high:   { label:"High",   color:"#EF4444" },
+  medium: { label:"Medium", color:"#F59E0B" },
+  low:    { label:"Low",    color:"#10B981" },
+};
+
+export const GENERAL_STEPS = [
+  { key:"pending_manager",  label:"Manager",          color:"#F97316" },
+  { key:"pending_ceo_1",    label:"CEO Approval",     color:"#EC4899" },
+  { key:"pending_finance",  label:"Finance Approval", color:"#F59E0B" },
+  { key:"pending_schedule", label:"Schedule Payment", color:"#8B5CF6" },
+  { key:"pending_bank",     label:"Bank Release",     color:"#3B82F6" },
+  { key:"pending_receipt",  label:"Upload Receipt",   color:"#10B981" },
+  { key:"pending_invoice",  label:"Employee Invoice", color:"#14B8A6" },
+  { key:"paid_onetime",     label:"Paid",             color:"#10B981" },
+];
+
+export const ENTITLEMENT_STEPS = [
+  { key:"pending_manager", label:"Manager"     },
+  { key:"pending_vp",      label:"VP"          },
+  { key:"pending_hr",      label:"HR"          },
+  { key:"pending_ceo_1",   label:"CEO Review"  },
+  { key:"pending_finance", label:"Finance"     },
+  { key:"pending_ceo_2",   label:"CEO Release" },
+  { key:"pending_pay",     label:"Pay & Docs"  },
+  { key:"paid_onetime",    label:"Paid"        },
+];
+
+export const RECURRING_STEPS = [
+  { key:"pending_approval",    label:"Manager"     },
+  { key:"pending_ceo_1_rec",   label:"CEO Review"  },
+  { key:"pending_finance_rec", label:"Finance"     },
+  { key:"pending_ceo_2_rec",   label:"CEO Release" },
+  { key:"pending_pay_rec",     label:"Pay & Docs"  },
+  { key:"paid",                label:"Paid"        },
+];
+
+
+export const ALL_PAGES = [
+  { id: "dashboard",    label: "Dashboard",    icon: "◼",  section: "MAIN"    },
+  { id: "forecast",     label: "Forecast",     icon: "📈", section: "MAIN"    },
+  { id: "recurring",    label: "Recurring",    icon: "↻",  section: "MAIN"    },
+  { id: "onetime",      label: "One-Time",     icon: "≡",  section: "MAIN"    },
+  { id: "entitlements", label: "Entitlements", icon: "👤", section: "MAIN"    },
+  { id: "approvals",    label: "Approvals",    icon: "✓",  section: "MAIN"    },
+  { id: "analytics",    label: "Analytics",    icon: "📊", section: "INSIGHTS" },
+  { id: "reports",      label: "Reports",      icon: "⬇",  section: "INSIGHTS" },
+  { id: "audit",        label: "Audit Log",    icon: "🗒",  section: "ADMIN"   },
+  { id: "notifications",label: "Notifications",icon: "🔔", section: "ADMIN"   },
+  { id: "permissions",  label: "Permissions",  icon: "🔑", section: "ADMIN"   },
+  { id: "departments",  label: "Departments",  icon: "🏢", section: "ADMIN"   },
+];
+
+export const ALL_PAGE_IDS = ALL_PAGES.map(p => p.id);
+
+export const PERM_LABELS = {
+  canSubmit:         { label: "Submit Requests",    icon: "📤", desc: "Create new one-time, entitlement, and recurring requests" },
+  canApproveL1:      { label: "Approve L1 (Mgr)",   icon: "✓",  desc: "Approve Level 1 in all three queues" },
+  canApproveVP:      { label: "Approve VP",          icon: "✓",  desc: "Approve entitlement VP level" },
+  canApproveHR:      { label: "Approve HR",          icon: "✓",  desc: "Approve entitlement HR level" },
+  canApproveCEO:     { label: "Approve CEO",         icon: "✓",  desc: "CEO review & release approvals" },
+  canApproveFinance: { label: "Approve Finance",     icon: "✓",  desc: "Finance-level approvals" },
+  canPay:            { label: "Record Payments",     icon: "💳", desc: "Record payment details and upload receipts" },
+  canViewAll:        { label: "View All Data",       icon: "👁",  desc: "See all users' submissions (not just own)" },
+  canExport:         { label: "Export Reports",      icon: "⬇",  desc: "Download financial reports" },
+  canManageUsers:    { label: "Manage Permissions",  icon: "🔑", desc: "Change role permissions and user assignments" },
+};
