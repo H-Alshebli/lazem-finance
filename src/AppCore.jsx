@@ -1,6 +1,6 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { C, ROLE_CONFIG, DEFAULT_PERMISSIONS, DEPARTMENTS } from "./utils/constants";
-import { daysUntil } from "./utils/helpers";
+import { daysUntil, today } from "./utils/helpers";
 
 const SEED_RECURRING = [];
 const INITIAL_ONETIME = [];
@@ -809,6 +809,89 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     dismissAllNotifications();
   };
 
+  // Phase 3: auto-approve CEO schedule after 2 days
+  useEffect(() => {
+    if (!setOnetime) return;
+    if (!Array.isArray(onetime) || onetime.length === 0) return;
+
+    const now = new Date();
+    let changed = false;
+
+    const updated = onetime.map((item) => {
+      if (item.status !== "pending_schedule_ceo") return item;
+      if (item.ceoScheduleApproval?.date) return item;
+
+      const sourceDate =
+        item.financeSchedule?.scheduledAt ||
+        item.history
+          ?.slice()
+          .reverse()
+          .find((h) => h.status === "pending_schedule_ceo")?.date;
+
+      if (!sourceDate) return item;
+
+      const scheduledAt = new Date(sourceDate);
+      if (Number.isNaN(scheduledAt.getTime())) return item;
+
+      const diffMs = now.getTime() - scheduledAt.getTime();
+      const diffDays = diffMs / (1000 * 60 * 60 * 24);
+
+      if (diffDays < 2) return item;
+
+      changed = true;
+
+      return {
+        ...item,
+        status: "pending_bank",
+        ceoScheduleApproval: {
+          by: "System",
+          date: today(),
+          autoApproved: true,
+        },
+        history: [
+          ...(item.history || []),
+          {
+            status: "pending_bank",
+            by: "System",
+            date: today(),
+            note: "CEO schedule approval auto-approved after 2 days",
+          },
+        ],
+      };
+    });
+
+    if (changed) {
+      setOnetime(updated);
+
+      if (addNotification) {
+        addNotification(
+          "approval_required",
+          "Schedule Auto-Approved",
+          "One or more CEO schedule approvals were automatically approved after 2 days"
+        );
+      }
+
+      if (logAudit) {
+        updated.forEach((item, index) => {
+          const oldItem = onetime[index];
+          if (
+            oldItem?.status === "pending_schedule_ceo" &&
+            item?.status === "pending_bank" &&
+            item?.ceoScheduleApproval?.autoApproved
+          ) {
+            logAudit(
+              "auto_approve",
+              "one-time",
+              item.id,
+              item.title,
+              "CEO schedule auto-approved after 2 days"
+            );
+          }
+        });
+      }
+    }
+  }, [onetime, setOnetime, addNotification, logAudit]);
+
   const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const activePages = permissions?.[userRole]?.pages || role.pages || [];
 
@@ -816,12 +899,20 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     (recurring || []).filter(
       (r) => r.status !== "paid" && daysUntil(r.renewalDate) < 0
     ).length +
-    (onetime || []).filter(
-      (o) =>
-        o.dueDate &&
-        daysUntil(o.dueDate) < 0 &&
-        !["approved", "pending_pay", "paid_onetime", "rejected"].includes(o.status)
-    ).length;
+    (onetime || []).filter((o) => {
+      const due = o.requestedPaymentDate || o.dueDate;
+      return (
+        due &&
+        daysUntil(due) < 0 &&
+        ![
+          "paid_onetime",
+          "rejected",
+          "pending_bank",
+          "pending_receipt",
+          "pending_invoice",
+        ].includes(o.status)
+      );
+    }).length;
 
   const dueThisWeek = (recurring || []).filter((r) => {
     const d = daysUntil(r.renewalDate);
@@ -864,7 +955,9 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
 
     if (userRole === "ceo") {
       return (
-        (onetime || []).filter((o) => o.status === "pending_ceo_1").length +
+        (onetime || []).filter((o) =>
+          ["pending_ceo_1", "pending_schedule_ceo"].includes(o.status)
+        ).length +
         (entitlements || []).filter((e) =>
           ["pending_ceo_1", "pending_ceo_2"].includes(e.status)
         ).length +
@@ -877,7 +970,13 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     if (userRole === "finance") {
       return (
         (onetime || []).filter((o) =>
-          ["pending_finance", "pending_schedule", "pending_bank", "pending_receipt", "pending_invoice"].includes(o.status)
+          [
+            "pending_finance",
+            "pending_schedule_finance",
+            "pending_bank",
+            "pending_receipt",
+            "pending_invoice",
+          ].includes(o.status)
         ).length +
         (entitlements || []).filter((e) =>
           ["pending_finance", "pending_pay"].includes(e.status)

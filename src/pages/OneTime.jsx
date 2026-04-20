@@ -13,10 +13,6 @@ import Badge from "../components/Badge";
 import WorkflowTimeline from "../components/WorkflowTimeline";
 import InvoiceUpload from "../components/InvoiceUpload";
 
-// Flow:
-// Submit (quotations) → Manager → CEO → Finance → Schedule Payment
-// → Bank Release → Receipt Upload → Employee Purchase Invoice → Paid
-
 function OnetimeView({
   onetime,
   setOnetime,
@@ -34,6 +30,7 @@ function OnetimeView({
   const [reschedModal, setReschedModal] = useState(null);
   const [invoiceModal, setInvoiceModal] = useState(null);
   const [invoiceFiles, setInvoiceFiles] = useState([]);
+  const [editModal, setEditModal] = useState(null);
 
   const [form, setForm] = useState({
     title: "",
@@ -47,8 +44,21 @@ function OnetimeView({
     invoices: [],
   });
 
+  const [editForm, setEditForm] = useState({
+    title: "",
+    category: "Equipment",
+    department: "All Company",
+    amount: "",
+    currency: "SAR",
+    priority: "medium",
+    dueDate: "",
+    notes: "",
+    invoices: [],
+  });
+
   const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const isFinance = userRole === "finance" || userRole === "admin";
+  const isAdmin = userRole === "admin";
   const canSeeAll = role.canViewAll;
 
   const myRequests = canSeeAll
@@ -62,7 +72,8 @@ function OnetimeView({
     ["pending_manager", "Pending Manager"],
     ["pending_ceo_1", "CEO Approval"],
     ["pending_finance", "Finance Approval"],
-    ["pending_schedule", "Schedule Payment"],
+    ["pending_schedule_finance", "Finance Schedule"],
+    ["pending_schedule_ceo", "CEO Schedule"],
     ["pending_bank", "Bank Release"],
     ["pending_receipt", "Upload Receipt"],
     ["pending_invoice", "Upload Invoice"],
@@ -89,10 +100,42 @@ function OnetimeView({
     });
   };
 
-  const addItem = () => {
-    if (!form.title.trim() || !form.amount) {
-      return showNotif("Title and Amount required", "error");
+  const validateRequestForm = (data, isEdit = false) => {
+    if (!data.title?.trim()) {
+      showNotif("Title is required", "error");
+      return false;
     }
+
+    if (!data.amount || Number(data.amount) <= 0) {
+      showNotif("Valid amount is required", "error");
+      return false;
+    }
+
+    if (!data.notes?.trim()) {
+      showNotif("Justification note is required", "error");
+      return false;
+    }
+
+    if (!data.dueDate) {
+      showNotif("Requested payment date is required", "error");
+      return false;
+    }
+
+    if (!Array.isArray(data.invoices) || data.invoices.length === 0) {
+      showNotif(
+        isEdit
+          ? "At least one quotation attachment is required"
+          : "Please upload at least one quotation attachment",
+        "error"
+      );
+      return false;
+    }
+
+    return true;
+  };
+
+  const addItem = () => {
+    if (!validateRequestForm(form)) return;
 
     const newItem = {
       ...form,
@@ -101,6 +144,10 @@ function OnetimeView({
       submittedBy: username,
       submittedById: currentUser?.uid,
       requestDate: today(),
+
+      // staff requested schedule
+      requestedPaymentDate: form.dueDate,
+
       status: "pending_manager",
       history: [
         {
@@ -113,7 +160,11 @@ function OnetimeView({
       managerApproval: null,
       ceo1Approval: null,
       financeApproval: null,
-      paymentSchedule: null,
+
+      // new schedule flow
+      financeSchedule: null,
+      ceoScheduleApproval: null,
+
       bankRelease: null,
       receiptUploaded: null,
       purchaseInvoices: [],
@@ -153,14 +204,13 @@ function OnetimeView({
         o.id === noteModal.id
           ? {
               ...o,
-              notes: noteModal.note,
               history: [
                 ...(o.history || []),
                 {
                   status: o.status,
                   by: username,
                   date: today(),
-                  note: `Note: ${noteModal.note}`,
+                  note: `💬 ${noteModal.note}`,
                 },
               ],
             }
@@ -169,7 +219,7 @@ function OnetimeView({
     );
 
     setNoteModal(null);
-    showNotif("Note saved!");
+    showNotif("Note added!");
   };
 
   const reschedule = () => {
@@ -181,13 +231,14 @@ function OnetimeView({
           ? {
               ...o,
               dueDate: reschedModal.date,
+              requestedPaymentDate: reschedModal.date,
               history: [
                 ...(o.history || []),
                 {
                   status: o.status,
                   by: username,
                   date: today(),
-                  note: `Due date rescheduled to ${reschedModal.date}`,
+                  note: `Requested payment date updated to ${reschedModal.date}`,
                 },
               ],
             }
@@ -196,7 +247,80 @@ function OnetimeView({
     );
 
     setReschedModal(null);
-    showNotif("Due date updated!");
+    showNotif("Requested payment date updated!");
+  };
+
+  const canEditRequest = (r) => {
+    if (isAdmin) return true;
+
+    const isMyReq =
+      r.submittedBy === username || r.submittedById === currentUser?.uid;
+
+    return (
+      isMyReq &&
+      ["pending_manager", "pending_ceo_1", "pending_finance"].includes(r.status)
+    );
+  };
+
+  const openEditModal = (r) => {
+    setEditForm({
+      title: r.title || "",
+      category: r.category || "Equipment",
+      department: r.department || "All Company",
+      amount: r.amount || "",
+      currency: r.currency || "SAR",
+      priority: r.priority || "medium",
+      dueDate: r.requestedPaymentDate || r.dueDate || "",
+      notes: r.notes || "",
+      invoices: Array.isArray(r.invoices) ? r.invoices : [],
+    });
+    setEditModal(r.id);
+  };
+
+  const saveEditRequest = () => {
+    if (!validateRequestForm(editForm, true)) return;
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === editModal
+          ? {
+              ...o,
+              title: editForm.title,
+              category: editForm.category,
+              department: editForm.department,
+              amount: +editForm.amount,
+              currency: editForm.currency,
+              priority: editForm.priority,
+              dueDate: editForm.dueDate,
+              requestedPaymentDate: editForm.dueDate,
+              notes: editForm.notes,
+              invoices: editForm.invoices,
+              history: [
+                ...(o.history || []),
+                {
+                  status: o.status,
+                  by: username,
+                  date: today(),
+                  note: "Request updated by requester/admin",
+                },
+              ],
+            }
+          : o
+      )
+    );
+
+    if (logAction) {
+      logAction(
+        "edit",
+        "one-time",
+        editModal,
+        editForm.title,
+        "Request details updated"
+      );
+    }
+
+    setEditModal(null);
+    showNotif("Request updated successfully!");
   };
 
   const uploadPurchaseInvoice = () => {
@@ -245,7 +369,7 @@ function OnetimeView({
       );
     }
 
-    showNotif("Invoice uploaded! Finance will close your request.");
+    showNotif("Purchase invoice uploaded successfully!");
   };
 
   return (
@@ -328,19 +452,30 @@ function OnetimeView({
         {filtered.map((r) => {
           const sc = statusConfig[r.status] || { label: r.status, color: C.muted };
           const pc = priorityConfig[r.priority] || priorityConfig.medium;
+          const displayRequestedDate = r.requestedPaymentDate || r.dueDate;
           const isOverdue =
-            r.dueDate &&
-            daysUntil(r.dueDate) < 0 &&
+            displayRequestedDate &&
+            daysUntil(displayRequestedDate) < 0 &&
             !["paid_onetime", "rejected"].includes(r.status);
+
           const expanded = expandedId === r.id;
           const isMyReq =
             r.submittedBy === username || r.submittedById === currentUser?.uid;
+
           const inPayment = [
-            "pending_schedule",
+            "pending_schedule_finance",
+            "pending_schedule_ceo",
             "pending_bank",
             "pending_receipt",
           ].includes(r.status);
-          const awaitingMyInvoice = isMyReq && r.status === "pending_invoice";
+
+          const hasUploadedPurchaseInvoice =
+            Array.isArray(r.purchaseInvoices) && r.purchaseInvoices.length > 0;
+
+          const showPurchaseInvoiceUpload =
+            isMyReq &&
+            r.status === "pending_invoice" &&
+            !hasUploadedPurchaseInvoice;
 
           return (
             <div
@@ -350,13 +485,13 @@ function OnetimeView({
                 borderRadius: 14,
                 padding: "18px 20px",
                 border: `1px solid ${
-                  awaitingMyInvoice
+                  showPurchaseInvoiceUpload
                     ? "#14B8A644"
                     : isOverdue
                     ? C.red + "55"
                     : sc.color + "33"
                 }`,
-                borderLeft: `4px solid ${awaitingMyInvoice ? "#14B8A6" : sc.color}`,
+                borderLeft: `4px solid ${showPurchaseInvoiceUpload ? "#14B8A6" : sc.color}`,
               }}
             >
               <WorkflowTimeline status={r.status} steps={GENERAL_STEPS} />
@@ -403,7 +538,7 @@ function OnetimeView({
                     </span>
                     <span>·</span>
                     <span>{fmtDate(r.requestDate)}</span>
-                    {r.dueDate && (
+                    {displayRequestedDate && (
                       <>
                         <span>·</span>
                         <span
@@ -412,7 +547,7 @@ function OnetimeView({
                             fontWeight: 600,
                           }}
                         >
-                          Due: {fmtDate(r.dueDate)}
+                          Requested Payment Date: {fmtDate(displayRequestedDate)}
                         </span>
                       </>
                     )}
@@ -467,10 +602,22 @@ function OnetimeView({
                       )
                     )}
 
-                    {r.paymentSchedule && (
+                    {r.financeApproval && (
                       <span style={{ color: C.green }}>
-                        ✓ Scheduled: {fmtDate(r.paymentSchedule.date)} ·{" "}
-                        {r.paymentSchedule.method}
+                        ✓ Finance approved
+                      </span>
+                    )}
+
+                    {r.financeSchedule && (
+                      <span style={{ color: C.green }}>
+                        ✓ Finance Schedule: {fmtDate(r.financeSchedule.approvedDate)}
+                      </span>
+                    )}
+
+                    {r.ceoScheduleApproval && (
+                      <span style={{ color: C.green }}>
+                        ✓ CEO schedule approved
+                        {r.ceoScheduleApproval.autoApproved ? " (Auto)" : ""}
                       </span>
                     )}
 
@@ -486,11 +633,49 @@ function OnetimeView({
 
                     {r.purchaseInvoices?.length > 0 && (
                       <span style={{ color: "#14B8A6" }}>
-                        ✓ Invoice submitted ({r.purchaseInvoices.length} file
-                        {r.purchaseInvoices.length !== 1 ? "s" : ""})
+                        ✓ Purchase invoice uploaded
                       </span>
                     )}
                   </div>
+
+                  {r.financeSchedule && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        background: C.subtle,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 8,
+                        padding: "8px 10px",
+                        marginBottom: 8,
+                        display: "grid",
+                        gap: 4,
+                      }}
+                    >
+                      <div style={{ color: C.purple, fontWeight: 700 }}>
+                        Finance Approved Schedule
+                      </div>
+                      <div style={{ color: C.text }}>
+                        Approved Date: {fmtDate(r.financeSchedule.approvedDate)}
+                      </div>
+                      <div style={{ color: C.text }}>
+                        Method: {r.financeSchedule.method}
+                      </div>
+                      <div style={{ color: C.text }}>
+                        Company: {r.financeSchedule.companyName}
+                      </div>
+                      {r.financeSchedule.method === "Bank Transfer" &&
+                        r.financeSchedule.bankName && (
+                          <div style={{ color: C.text }}>
+                            Bank: {r.financeSchedule.bankName}
+                          </div>
+                        )}
+                      {r.financeSchedule.note && (
+                        <div style={{ color: C.muted }}>
+                          Note: {r.financeSchedule.note}
+                        </div>
+                      )}
+                    </div>
+                  )}
 
                   {r.receiptUploaded?.files?.length > 0 && (
                     <div
@@ -544,6 +729,58 @@ function OnetimeView({
                     </div>
                   )}
 
+                  {r.purchaseInvoices?.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: "#14B8A6",
+                        marginBottom: 8,
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>🧾 Purchase Invoice:</span>
+                      {r.purchaseInvoices.map((f) => {
+                        const fileUrl = f.downloadUrl || f.dataUrl;
+
+                        return fileUrl ? (
+                          <a
+                            key={f.id || f.name}
+                            href={fileUrl}
+                            download={f.name}
+                            target="_blank"
+                            rel="noreferrer"
+                            style={{
+                              background: "#14B8A612",
+                              border: `1px solid #14B8A633`,
+                              borderRadius: 5,
+                              padding: "2px 8px",
+                              color: "#14B8A6",
+                              textDecoration: "none",
+                            }}
+                          >
+                            ⬇ {f.name}
+                          </a>
+                        ) : (
+                          <span
+                            key={f.id || f.name}
+                            style={{
+                              background: "#14B8A612",
+                              border: `1px solid #14B8A633`,
+                              borderRadius: 5,
+                              padding: "2px 8px",
+                              color: C.muted,
+                            }}
+                          >
+                            📄 {f.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {isMyReq && inPayment && (
                     <div
                       style={{
@@ -556,12 +793,11 @@ function OnetimeView({
                         marginBottom: 8,
                       }}
                     >
-                      ⏳ Payment is being processed by Finance — you will be notified
-                      when it is released
+                      ⏳ Payment is being processed by Finance / CEO schedule flow
                     </div>
                   )}
 
-                  {awaitingMyInvoice && (
+                  {showPurchaseInvoiceUpload && (
                     <div
                       style={{
                         padding: "12px 16px",
@@ -588,8 +824,7 @@ function OnetimeView({
                           marginBottom: 10,
                         }}
                       >
-                        Please purchase the item and upload your invoice below to
-                        complete this request.
+                        Please upload the final purchase invoice to complete this request.
                       </div>
                       <button
                         onClick={() => {
@@ -609,6 +844,22 @@ function OnetimeView({
                       >
                         ⬆ Upload Purchase Invoice
                       </button>
+                    </div>
+                  )}
+
+                  {isMyReq && r.status === "pending_invoice" && hasUploadedPurchaseInvoice && (
+                    <div
+                      style={{
+                        padding: "10px 14px",
+                        background: "#14B8A612",
+                        border: `1px solid #14B8A644`,
+                        borderRadius: 8,
+                        fontSize: 12,
+                        color: "#14B8A6",
+                        marginBottom: 8,
+                      }}
+                    >
+                      ✅ Purchase invoice already uploaded
                     </div>
                   )}
 
@@ -680,7 +931,7 @@ function OnetimeView({
                     </button>
 
                     <button
-                      onClick={() => setNoteModal({ id: r.id, note: r.notes || "" })}
+                      onClick={() => setNoteModal({ id: r.id, note: "" })}
                       style={{
                         fontSize: 11,
                         padding: "5px 12px",
@@ -691,14 +942,34 @@ function OnetimeView({
                         cursor: "pointer",
                       }}
                     >
-                      📝 Note
+                      📝 Add Note
                     </button>
 
-                    {(isMyReq || isFinance) &&
+                    {canEditRequest(r) && (
+                      <button
+                        onClick={() => openEditModal(r)}
+                        style={{
+                          fontSize: 11,
+                          padding: "5px 12px",
+                          background: C.subtle,
+                          border: `1px solid ${C.border}`,
+                          borderRadius: 8,
+                          color: C.accent,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ✏️ Edit Request
+                      </button>
+                    )}
+
+                    {(isMyReq || isFinance || isAdmin) &&
                       !["paid_onetime", "rejected"].includes(r.status) && (
                         <button
                           onClick={() =>
-                            setReschedModal({ id: r.id, date: r.dueDate || "" })
+                            setReschedModal({
+                              id: r.id,
+                              date: r.requestedPaymentDate || r.dueDate || "",
+                            })
                           }
                           style={{
                             fontSize: 11,
@@ -710,7 +981,7 @@ function OnetimeView({
                             cursor: "pointer",
                           }}
                         >
-                          📅 Reschedule
+                          📅 Update Requested Date
                         </button>
                       )}
                   </div>
@@ -744,20 +1015,13 @@ function OnetimeView({
               New One-Time Request
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>
-              Flow: Manager → CEO → Finance → Schedule payment → Bank release →
-              Receipt upload → Employee uploads invoice → Paid
+              Create a one-time request with mandatory note, requested payment date,
+              and quotation attachment.
             </div>
 
             <div style={{ display: "grid", gap: 12 }}>
               <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: C.muted,
-                    display: "block",
-                    marginBottom: 5,
-                  }}
-                >
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
                   TITLE *
                 </label>
                 <input
@@ -770,15 +1034,8 @@ function OnetimeView({
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
                 <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: C.muted,
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    CATEGORY
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    CATEGORY *
                   </label>
                   <select
                     className="inp"
@@ -792,15 +1049,8 @@ function OnetimeView({
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: C.muted,
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    DEPARTMENT
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    DEPARTMENT *
                   </label>
                   <select
                     className="inp"
@@ -822,14 +1072,7 @@ function OnetimeView({
                 }}
               >
                 <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: C.muted,
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
                     AMOUNT *
                   </label>
                   <input
@@ -842,15 +1085,8 @@ function OnetimeView({
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: C.muted,
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    CURRENCY
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    CURRENCY *
                   </label>
                   <select
                     className="inp"
@@ -864,15 +1100,8 @@ function OnetimeView({
                 </div>
 
                 <div>
-                  <label
-                    style={{
-                      fontSize: 11,
-                      color: C.muted,
-                      display: "block",
-                      marginBottom: 5,
-                    }}
-                  >
-                    PRIORITY
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    PRIORITY *
                   </label>
                   <select
                     className="inp"
@@ -887,15 +1116,8 @@ function OnetimeView({
               </div>
 
               <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: C.muted,
-                    display: "block",
-                    marginBottom: 5,
-                  }}
-                >
-                  PAYMENT DUE DATE
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  REQUESTED PAYMENT DATE *
                 </label>
                 <input
                   className="inp"
@@ -906,35 +1128,21 @@ function OnetimeView({
               </div>
 
               <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: C.muted,
-                    display: "block",
-                    marginBottom: 5,
-                  }}
-                >
-                  NOTES / JUSTIFICATION
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  JUSTIFICATION NOTE *
                 </label>
                 <textarea
                   className="inp"
                   rows={3}
                   value={form.notes}
                   onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                  placeholder="Why is this needed? Add context or specs..."
+                  placeholder="Explain why this purchase/payment is needed..."
                 />
               </div>
 
               <div>
-                <label
-                  style={{
-                    fontSize: 11,
-                    color: C.muted,
-                    display: "block",
-                    marginBottom: 5,
-                  }}
-                >
-                  PRICE QUOTATIONS / ATTACHMENTS
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  QUOTATIONS / ATTACHMENTS *
                 </label>
                 <InvoiceUpload
                   invoices={form.invoices || []}
@@ -955,6 +1163,165 @@ function OnetimeView({
         </div>
       )}
 
+      {editModal && (
+        <div className="overlay" onClick={() => setEditModal(null)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 560 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>
+              Edit Request
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>
+              Update request details and quotations.
+            </div>
+
+            <div style={{ display: "grid", gap: 12 }}>
+              <div>
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  TITLE *
+                </label>
+                <input
+                  className="inp"
+                  value={editForm.title}
+                  onChange={(e) => setEditForm({ ...editForm, title: e.target.value })}
+                />
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                <div>
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    CATEGORY *
+                  </label>
+                  <select
+                    className="inp"
+                    value={editForm.category}
+                    onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                  >
+                    {CATEGORIES_ONETIME.map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    DEPARTMENT *
+                  </label>
+                  <select
+                    className="inp"
+                    value={editForm.department}
+                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                  >
+                    {DEPARTMENTS.map((d) => (
+                      <option key={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
+              <div
+                style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr 1fr",
+                  gap: 10,
+                }}
+              >
+                <div>
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    AMOUNT *
+                  </label>
+                  <input
+                    className="inp"
+                    type="number"
+                    value={editForm.amount}
+                    onChange={(e) => setEditForm({ ...editForm, amount: e.target.value })}
+                  />
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    CURRENCY *
+                  </label>
+                  <select
+                    className="inp"
+                    value={editForm.currency}
+                    onChange={(e) => setEditForm({ ...editForm, currency: e.target.value })}
+                  >
+                    {["SAR", "USD", "EUR", "KWD", "AED"].map((c) => (
+                      <option key={c}>{c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                    PRIORITY *
+                  </label>
+                  <select
+                    className="inp"
+                    value={editForm.priority}
+                    onChange={(e) => setEditForm({ ...editForm, priority: e.target.value })}
+                  >
+                    <option value="high">High</option>
+                    <option value="medium">Medium</option>
+                    <option value="low">Low</option>
+                  </select>
+                </div>
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  REQUESTED PAYMENT DATE *
+                </label>
+                <input
+                  className="inp"
+                  type="date"
+                  value={editForm.dueDate}
+                  onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  JUSTIFICATION NOTE *
+                </label>
+                <textarea
+                  className="inp"
+                  rows={3}
+                  value={editForm.notes}
+                  onChange={(e) => setEditForm({ ...editForm, notes: e.target.value })}
+                />
+              </div>
+
+              <div>
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  QUOTATIONS / ATTACHMENTS *
+                </label>
+                <InvoiceUpload
+                  invoices={editForm.invoices || []}
+                  onChange={(invs) => setEditForm((f) => ({ ...f, invoices: invs }))}
+                />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
+              <button
+                className="btn-primary"
+                onClick={saveEditRequest}
+                style={{ flex: 1 }}
+              >
+                Save Changes
+              </button>
+              <button className="btn-ghost" onClick={() => setEditModal(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {noteModal && (
         <div className="overlay" onClick={() => setNoteModal(null)}>
           <div
@@ -963,14 +1330,14 @@ function OnetimeView({
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>
-              📝 Add / Edit Note
+              📝 Add Note
             </div>
             <textarea
               className="inp"
               rows={4}
               value={noteModal.note}
               onChange={(e) => setNoteModal({ ...noteModal, note: e.target.value })}
-              placeholder="Note visible to all reviewers..."
+              placeholder="Add another note or comment..."
             />
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
               <button className="btn-primary" onClick={saveNote} style={{ flex: 1 }}>
@@ -992,7 +1359,7 @@ function OnetimeView({
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>
-              📅 Reschedule Due Date
+              📅 Update Requested Payment Date
             </div>
             <input
               className="inp"
@@ -1036,8 +1403,7 @@ function OnetimeView({
               ⬆ Upload Purchase Invoice
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>
-              Upload the invoice/receipt from your purchase. Finance will review
-              and close the request.
+              Upload the final purchase invoice. At least one file is required.
             </div>
 
             <InvoiceUpload invoices={invoiceFiles} onChange={setInvoiceFiles} />
