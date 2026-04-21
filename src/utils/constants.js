@@ -39,7 +39,7 @@ export const ROLE_CONFIG = {
   staff: {
     label: "Staff",
     color: "#6B7A99",
-    desc: "Submit requests only",
+    //desc: "Submit requests only",
     pages: ["recurring", "onetime", "entitlements"],
     canApprove: [],
     canSubmit: true,
@@ -49,7 +49,7 @@ export const ROLE_CONFIG = {
   manager: {
     label: "Manager",
     color: "#F97316",
-    desc: "Approve Level 1 — sees own submissions + pending queue",
+    //desc: "Approve Level 1 — sees own submissions + pending queue",
     pages: ["dashboard", "forecast", "onetime", "entitlements", "recurring", "approvals"],
     canApprove: ["pending_manager", "pending_approval"],
     canSubmit: true,
@@ -59,7 +59,7 @@ export const ROLE_CONFIG = {
   vp: {
     label: "VP",
     color: "#14B8A6",
-    desc: "Approve Entitlements Level 2",
+    //desc: "Approve Entitlements Level 2",
     pages: ["dashboard", "forecast", "onetime", "entitlements", "recurring", "approvals"],
     canApprove: ["pending_vp"],
     canSubmit: true,
@@ -69,7 +69,7 @@ export const ROLE_CONFIG = {
   hr: {
     label: "HR",
     color: "#A78BFA",
-    desc: "Approve Entitlements Level 3",
+    //desc: "Approve Entitlements Level 3",
     pages: ["dashboard", "forecast", "onetime", "entitlements", "recurring", "approvals"],
     canApprove: ["pending_hr"],
     canSubmit: true,
@@ -79,7 +79,7 @@ export const ROLE_CONFIG = {
   ceo: {
     label: "CEO",
     color: "#EC4899",
-    desc: "Review & Release — sees pending CEO queues",
+    //desc: "Review & Release — sees pending CEO queues",
     pages: ["dashboard", "forecast", "onetime", "entitlements", "recurring", "approvals"],
     canApprove: [
       "pending_ceo_1",
@@ -95,7 +95,7 @@ export const ROLE_CONFIG = {
   finance: {
     label: "Finance",
     color: "#F59E0B",
-    desc: "Full access — all requests, payments, approvals",
+    //desc: "Full access — all requests, payments, approvals",
     pages: ["dashboard", "forecast", "recurring", "onetime", "entitlements", "approvals", "analytics", "reports"],
     canApprove: [
       "pending_finance",
@@ -111,7 +111,7 @@ export const ROLE_CONFIG = {
   executive: {
     label: "Executive",
     color: "#8B5CF6",
-    desc: "Read-only full overview",
+    //desc: "Read-only full overview",
     pages: ["dashboard", "forecast", "recurring", "onetime", "entitlements", "approvals", "analytics", "reports", "permissions"],
     canApprove: [],
     canSubmit: false,
@@ -121,7 +121,7 @@ export const ROLE_CONFIG = {
   admin: {
     label: "Admin",
     color: "#EF4444",
-    desc: "Full system access — all pages, all permissions",
+    //desc: "Full system access — all pages, all permissions",
     pages: ["dashboard", "forecast", "recurring", "onetime", "entitlements", "approvals", "analytics", "reports", "audit", "notifications", "permissions", "departments"],
     canApprove: [
       "pending_manager",
@@ -352,6 +352,21 @@ export const RECURRING_STEPS = [
   { key: "pending_ceo_2_rec", label: "CEO Release" },
   { key: "pending_pay_rec", label: "Pay & Docs" },
   { key: "paid", label: "Paid" },
+];
+export const COMPANY_OPTIONS = [
+  "Lazem Medical Services",
+  "Lazem Safety",
+  "Lazem Training",
+];
+
+export const BANK_OPTIONS = [
+  "Al Rajhi Bank",
+  "Saudi National Bank",
+  "Riyad Bank",
+  "Banque Saudi Fransi",
+  "Arab National Bank",
+  "Alinma Bank",
+  "Bank AlJazira",
 ];
 
 export const ALL_PAGES = [
