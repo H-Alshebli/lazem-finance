@@ -32,6 +32,9 @@ import Recurring from "./pages/Recurring";
 import OneTime from "./pages/OneTime";
 import Entitlements from "./pages/Entitlements";
 import Approvals from "./pages/Approvals";
+import ApprovalsOneTime from "./pages/ApprovalsOneTime";
+import ApprovalsRecurring from "./pages/ApprovalsRecurring";
+import ApprovalsEntitlements from "./pages/ApprovalsEntitlements";
 import Analytics from "./pages/Analytics";
 import Reports from "./pages/Reports";
 import AuditLog from "./pages/AuditLog";
@@ -678,81 +681,6 @@ export function AuthGate({ children }) {
   );
 }
 
-export default function AppCore({
-  firebaseUser,
-  firebaseLogout,
-  firebaseData,
-  firebaseAllUsers,
-  firebaseSetAuthUsers,
-} = {}) {
-  if (firebaseUser && firebaseData) {
-    const authUsers = {};
-    (firebaseAllUsers || []).forEach((u) => {
-      authUsers[u.email] = u;
-    });
-
-    const shared = {
-      recurring: firebaseData.recurring || [],
-      onetime: firebaseData.onetime || [],
-      entitlements: firebaseData.entitlements || [],
-      auditLog: firebaseData.auditLog || [],
-      notifications: firebaseData.notifications || [],
-      unreadCount: firebaseData.unreadCount || 0,
-      permissions: firebaseData.permissions || {},
-      deptConfig: firebaseData.deptConfig || [],
-      setRecurring: firebaseData.setRecurring,
-      setOnetime: firebaseData.setOnetime,
-      setEntitlements: firebaseData.setEntitlements,
-      setPermissions: firebaseData.setPermissions,
-      setDeptConfig: firebaseData.setDeptConfig,
-      logAudit: firebaseData.logAudit,
-      addNotification: firebaseData.addNotification,
-      dismissNotification: firebaseData.dismissNotification,
-      dismissAllNotifications: firebaseData.dismissAllNotifications,
-    };
-
-    const setAuthUsers = (updater) => {
-      const prev = {};
-      (firebaseAllUsers || []).forEach((u) => {
-        prev[u.email] = u;
-      });
-
-      const next = typeof updater === "function" ? updater(prev) : updater;
-
-      Object.entries(next).forEach(([email, user]) => {
-        const original = prev[email];
-        if (original && original.role !== user.role && firebaseSetAuthUsers) {
-          firebaseSetAuthUsers(user.id, user.role);
-        }
-      });
-    };
-
-    return (
-      <AppInner
-        currentUser={firebaseUser}
-        logout={firebaseLogout}
-        authUsers={authUsers}
-        setAuthUsers={setAuthUsers}
-        shared={shared}
-      />
-    );
-  }
-
-  return (
-    <AuthGate>
-      {(currentUser, logout, authUsers, setAuthUsers, shared) => (
-        <AppInner
-          currentUser={currentUser}
-          logout={logout}
-          authUsers={authUsers}
-          setAuthUsers={setAuthUsers}
-          shared={shared}
-        />
-      )}
-    </AuthGate>
-  );
-}
-
 function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   const getDefaultView = (role) => {
     const pages = DEFAULT_PERMISSIONS[role]?.pages || ROLE_CONFIG[role]?.pages || [];
@@ -1212,7 +1140,12 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
         {view === "recurring" && <Recurring {...pageProps} />}
         {view === "onetime" && <OneTime {...pageProps} currentUser={currentUser} />}
         {view === "entitlements" && <Entitlements {...pageProps} />}
-        {view === "approvals" && <Approvals {...pageProps} currentUser={currentUser} />}
+
+        {view === "approvals" && <Approvals {...pageProps} />}
+        {view === "approvals_onetime" && <ApprovalsOneTime {...pageProps} currentUser={currentUser} />}
+        {view === "approvals_recurring" && <ApprovalsRecurring {...pageProps} currentUser={currentUser} />}
+        {view === "approvals_entitlements" && <ApprovalsEntitlements {...pageProps} currentUser={currentUser} />}
+
         {view === "analytics" && <Analytics {...pageProps} />}
         {view === "reports" && <Reports {...pageProps} />}
         {view === "audit" && <AuditLog {...pageProps} />}
@@ -1221,5 +1154,80 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
         {view === "departments" && <Departments {...pageProps} />}
       </div>
     </div>
+  );
+}
+
+export default function AppCore({
+  firebaseUser,
+  firebaseLogout,
+  firebaseData,
+  firebaseAllUsers,
+  firebaseSetAuthUsers,
+} = {}) {
+  if (firebaseUser && firebaseData) {
+    const authUsers = {};
+    (firebaseAllUsers || []).forEach((u) => {
+      authUsers[u.email] = u;
+    });
+
+    const shared = {
+      recurring: firebaseData.recurring || [],
+      onetime: firebaseData.onetime || [],
+      entitlements: firebaseData.entitlements || [],
+      auditLog: firebaseData.auditLog || [],
+      notifications: firebaseData.notifications || [],
+      unreadCount: firebaseData.unreadCount || 0,
+      permissions: firebaseData.permissions || {},
+      deptConfig: firebaseData.deptConfig || [],
+      setRecurring: firebaseData.setRecurring,
+      setOnetime: firebaseData.setOnetime,
+      setEntitlements: firebaseData.setEntitlements,
+      setPermissions: firebaseData.setPermissions,
+      setDeptConfig: firebaseData.setDeptConfig,
+      logAudit: firebaseData.logAudit,
+      addNotification: firebaseData.addNotification,
+      dismissNotification: firebaseData.dismissNotification,
+      dismissAllNotifications: firebaseData.dismissAllNotifications,
+    };
+
+    const setAuthUsers = (updater) => {
+      const prev = {};
+      (firebaseAllUsers || []).forEach((u) => {
+        prev[u.email] = u;
+      });
+
+      const next = typeof updater === "function" ? updater(prev) : updater;
+
+      Object.entries(next).forEach(([email, user]) => {
+        const original = prev[email];
+        if (original && original.role !== user.role && firebaseSetAuthUsers) {
+          firebaseSetAuthUsers(user.id, user.role);
+        }
+      });
+    };
+
+    return (
+      <AppInner
+        currentUser={firebaseUser}
+        logout={firebaseLogout}
+        authUsers={authUsers}
+        setAuthUsers={setAuthUsers}
+        shared={shared}
+      />
+    );
+  }
+
+  return (
+    <AuthGate>
+      {(currentUser, logout, authUsers, setAuthUsers, shared) => (
+        <AppInner
+          currentUser={currentUser}
+          logout={logout}
+          authUsers={authUsers}
+          setAuthUsers={setAuthUsers}
+          shared={shared}
+        />
+      )}
+    </AuthGate>
   );
 }
