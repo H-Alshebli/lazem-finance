@@ -70,17 +70,12 @@ function ApprovalsOneTimeView({
     )
     .map((d) => d.id);
 
-  const deptFilter = (item) =>
-    myManagedDepts.length === 0 ||
-    myManagedDepts.includes(item.department) ||
-    item.department === "All Company";
+  const getApprovalDepartment = (item) =>
+    item.approvalDepartment || item.department || "";
 
-  const filterMgr = (items) =>
-    canManager
-      ? myManagedDepts.length === 0
-        ? items
-        : items.filter(deptFilter)
-      : [];
+  const deptFilter = (item) => myManagedDepts.includes(getApprovalDepartment(item));
+
+  const filterMgr = (items) => (canManager ? items.filter(deptFilter) : []);
 
   const addHistory = (item, status, note) => ({
     ...item,
@@ -571,6 +566,8 @@ function ApprovalsOneTimeView({
     const pc = priorityConfig[r.priority] || priorityConfig.medium;
     const showAttachments = canApprove || canSeeAll;
     const displayRequestedDate = r.requestedPaymentDate || r.dueDate;
+    const requestedFor = r.department || "-";
+    const approvalFlow = getApprovalDepartment(r) || "-";
 
     return (
       <div
@@ -614,7 +611,9 @@ function ApprovalsOneTimeView({
                 marginBottom: 6,
               }}
             >
-              <span>{r.department}</span>
+              <span>Requested For: {requestedFor}</span>
+              <span>·</span>
+              <span>Approval Flow: {approvalFlow}</span>
               <span>·</span>
               <span>{r.category}</span>
               <span>·</span>

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useMemo, useState } from "react";
 import {
   C,
   DEPARTMENTS,
@@ -22,6 +22,7 @@ function OnetimeView({
   logAction,
   addNotif,
   currentUser,
+  deptConfig,
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -32,39 +33,74 @@ function OnetimeView({
   const [invoiceFiles, setInvoiceFiles] = useState([]);
   const [editModal, setEditModal] = useState(null);
 
-  const [form, setForm] = useState({
-    title: "",
-    category: "Equipment",
-    department: "All Company",
-    amount: "",
-    currency: "SAR",
-    priority: "medium",
-    dueDate: "",
-    notes: "",
-    invoices: [],
-  });
-
-  const [editForm, setEditForm] = useState({
-    title: "",
-    category: "Equipment",
-    department: "All Company",
-    amount: "",
-    currency: "SAR",
-    priority: "medium",
-    dueDate: "",
-    notes: "",
-    invoices: [],
-  });
-
   const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const isFinance = userRole === "finance" || userRole === "admin";
   const isAdmin = userRole === "admin";
   const canSeeAll = role.canViewAll;
 
+  const resolveUserDepartments = () => {
+    const uidOrId = currentUser?.uid || currentUser?.id;
+    const email = currentUser?.email;
+
+    const fromDeptConfig = (deptConfig || [])
+      .filter((d) => {
+        const staff = Array.isArray(d.staff) ? d.staff : [];
+        return staff.includes(uidOrId) || (email && staff.includes(email));
+      })
+      .map((d) => d.id);
+
+    const fromProfile = currentUser?.department ? [currentUser.department] : [];
+
+    return [...new Set([...fromDeptConfig, ...fromProfile])].filter(Boolean);
+  };
+
+  const userDepartments = useMemo(resolveUserDepartments, [deptConfig, currentUser]);
+  const creatorDepartment = userDepartments[0] || "";
+  const isITRequester =
+    isAdmin || creatorDepartment === "IT" || userDepartments.includes("IT");
+
+  const getDefaultTargetDepartment = () => {
+    if (isITRequester) return "IT";
+    return creatorDepartment || "";
+  };
+
+  const buildInitialForm = () => ({
+    title: "",
+    category: "Equipment",
+    department: getDefaultTargetDepartment(),
+    approvalDepartment: isITRequester ? "IT" : creatorDepartment || "",
+    creatorDepartment: creatorDepartment || "",
+    amount: "",
+    currency: "SAR",
+    priority: "medium",
+    dueDate: "",
+    notes: "",
+    invoices: [],
+  });
+
+  const [form, setForm] = useState(buildInitialForm);
+
+  const [editForm, setEditForm] = useState({
+    title: "",
+    category: "Equipment",
+    department: getDefaultTargetDepartment(),
+    approvalDepartment: isITRequester ? "IT" : creatorDepartment || "",
+    creatorDepartment: creatorDepartment || "",
+    amount: "",
+    currency: "SAR",
+    priority: "medium",
+    dueDate: "",
+    notes: "",
+    invoices: [],
+  });
+
   const myRequests = canSeeAll
     ? onetime || []
     : (onetime || []).filter(
-        (o) => o.submittedBy === username || o.submittedById === currentUser?.uid
+        (o) =>
+          o.submittedBy === username ||
+          o.submittedById === currentUser?.uid ||
+          o.submittedById === currentUser?.id
       );
 
   const statusTabs = [
@@ -87,17 +123,7 @@ function OnetimeView({
       : myRequests.filter((o) => o.status === filterStatus);
 
   const resetForm = () => {
-    setForm({
-      title: "",
-      category: "Equipment",
-      department: "All Company",
-      amount: "",
-      currency: "SAR",
-      priority: "medium",
-      dueDate: "",
-      notes: "",
-      invoices: [],
-    });
+    setForm(buildInitialForm());
   };
 
   const validateRequestForm = (data, isEdit = false) => {
@@ -121,6 +147,11 @@ function OnetimeView({
       return false;
     }
 
+    if (!data.department?.trim()) {
+      showNotif("Department is required", "error");
+      return false;
+    }
+
     if (!Array.isArray(data.invoices) || data.invoices.length === 0) {
       showNotif(
         isEdit
@@ -137,15 +168,26 @@ function OnetimeView({
   const addItem = () => {
     if (!validateRequestForm(form)) return;
 
+    const targetDepartment = isITRequester
+      ? form.department
+      : creatorDepartment || form.department || "";
+
+    const approvalDepartment = isITRequester
+      ? "IT"
+      : creatorDepartment || form.department || "";
+
     const newItem = {
       ...form,
       id: uid(),
       amount: +form.amount,
+      department: targetDepartment,
+      approvalDepartment,
+      creatorDepartment: creatorDepartment || "",
       submittedBy: username,
-      submittedById: currentUser?.uid,
+      submittedById: currentUser?.uid || currentUser?.id,
+      submittedByEmail: currentUser?.email || "",
       requestDate: today(),
 
-      // staff requested schedule
       requestedPaymentDate: form.dueDate,
 
       status: "pending_manager",
@@ -154,17 +196,14 @@ function OnetimeView({
           status: "pending_manager",
           by: username,
           date: today(),
-          note: "Request submitted with quotations",
+          note: `Request submitted with quotations · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
         },
       ],
       managerApproval: null,
       ceo1Approval: null,
       financeApproval: null,
-
-      // new schedule flow
       financeSchedule: null,
       ceoScheduleApproval: null,
-
       bankRelease: null,
       receiptUploaded: null,
       purchaseInvoices: [],
@@ -179,16 +218,16 @@ function OnetimeView({
         "create",
         "one-time",
         newItem.id,
-        form.title,
-        `${form.category} · ${form.department}`,
-        +form.amount
+        newItem.title,
+        `${newItem.category} · Requested For ${newItem.department} · Approval Flow ${newItem.approvalDepartment}`,
+        +newItem.amount
       );
     }
 
     if (addNotif) {
       addNotif(
         "new_submission",
-        `New Request: ${form.title}`,
+        `New Request: ${newItem.title}`,
         `Submitted by ${username} — awaiting Manager approval`
       );
     }
@@ -254,7 +293,9 @@ function OnetimeView({
     if (isAdmin) return true;
 
     const isMyReq =
-      r.submittedBy === username || r.submittedById === currentUser?.uid;
+      r.submittedBy === username ||
+      r.submittedById === currentUser?.uid ||
+      r.submittedById === currentUser?.id;
 
     return (
       isMyReq &&
@@ -266,7 +307,10 @@ function OnetimeView({
     setEditForm({
       title: r.title || "",
       category: r.category || "Equipment",
-      department: r.department || "All Company",
+      department: r.department || getDefaultTargetDepartment(),
+      approvalDepartment:
+        r.approvalDepartment || (isITRequester ? "IT" : creatorDepartment || ""),
+      creatorDepartment: r.creatorDepartment || creatorDepartment || "",
       amount: r.amount || "",
       currency: r.currency || "SAR",
       priority: r.priority || "medium",
@@ -280,6 +324,14 @@ function OnetimeView({
   const saveEditRequest = () => {
     if (!validateRequestForm(editForm, true)) return;
 
+    const targetDepartment = isITRequester
+      ? editForm.department
+      : creatorDepartment || editForm.department || "";
+
+    const approvalDepartment = isITRequester
+      ? "IT"
+      : creatorDepartment || editForm.department || "";
+
     setOnetime((p) =>
       p.map((o) =>
         o.id === editModal
@@ -287,7 +339,9 @@ function OnetimeView({
               ...o,
               title: editForm.title,
               category: editForm.category,
-              department: editForm.department,
+              department: targetDepartment,
+              approvalDepartment,
+              creatorDepartment: editForm.creatorDepartment || creatorDepartment || "",
               amount: +editForm.amount,
               currency: editForm.currency,
               priority: editForm.priority,
@@ -301,7 +355,7 @@ function OnetimeView({
                   status: o.status,
                   by: username,
                   date: today(),
-                  note: "Request updated by requester/admin",
+                  note: `Request updated by requester/admin · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
                 },
               ],
             }
@@ -315,7 +369,7 @@ function OnetimeView({
         "one-time",
         editModal,
         editForm.title,
-        "Request details updated"
+        `Request details updated · Requested For ${targetDepartment} · Approval Flow ${approvalDepartment}`
       );
     }
 
@@ -460,7 +514,9 @@ function OnetimeView({
 
           const expanded = expandedId === r.id;
           const isMyReq =
-            r.submittedBy === username || r.submittedById === currentUser?.uid;
+            r.submittedBy === username ||
+            r.submittedById === currentUser?.uid ||
+            r.submittedById === currentUser?.id;
 
           const inPayment = [
             "pending_schedule_finance",
@@ -476,6 +532,9 @@ function OnetimeView({
             isMyReq &&
             r.status === "pending_invoice" &&
             !hasUploadedPurchaseInvoice;
+
+          const requestedFor = r.department || "-";
+          const approvalFlow = r.approvalDepartment || r.department || "-";
 
           return (
             <div
@@ -529,7 +588,9 @@ function OnetimeView({
                       flexWrap: "wrap",
                     }}
                   >
-                    <span>{r.department}</span>
+                    <span>Requested For: {requestedFor}</span>
+                    <span>·</span>
+                    <span>Approval Flow: {approvalFlow}</span>
                     <span>·</span>
                     <span>{r.category}</span>
                     <span>·</span>
@@ -1048,20 +1109,33 @@ function OnetimeView({
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
-                    DEPARTMENT *
-                  </label>
-                  <select
-                    className="inp"
-                    value={form.department}
-                    onChange={(e) => setForm({ ...form, department: e.target.value })}
-                  >
-                    {DEPARTMENTS.map((d) => (
-                      <option key={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
+                {isITRequester ? (
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      REQUESTED FOR DEPARTMENT *
+                    </label>
+                    <select
+                      className="inp"
+                      value={form.department}
+                      onChange={(e) => setForm({ ...form, department: e.target.value })}
+                    >
+                      {DEPARTMENTS.filter((d) => d !== "All Company").map((d) => (
+                        <option key={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      DEPARTMENT
+                    </label>
+                    <input
+                      className="inp"
+                      value={creatorDepartment || "-"}
+                      readOnly
+                    />
+                  </div>
+                )}
               </div>
 
               <div
@@ -1205,20 +1279,33 @@ function OnetimeView({
                   </select>
                 </div>
 
-                <div>
-                  <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
-                    DEPARTMENT *
-                  </label>
-                  <select
-                    className="inp"
-                    value={editForm.department}
-                    onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
-                  >
-                    {DEPARTMENTS.map((d) => (
-                      <option key={d}>{d}</option>
-                    ))}
-                  </select>
-                </div>
+                {isITRequester ? (
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      REQUESTED FOR DEPARTMENT *
+                    </label>
+                    <select
+                      className="inp"
+                      value={editForm.department}
+                      onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
+                    >
+                      {DEPARTMENTS.filter((d) => d !== "All Company").map((d) => (
+                        <option key={d}>{d}</option>
+                      ))}
+                    </select>
+                  </div>
+                ) : (
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      DEPARTMENT
+                    </label>
+                    <input
+                      className="inp"
+                      value={creatorDepartment || "-"}
+                      readOnly
+                    />
+                  </div>
+                )}
               </div>
 
               <div
