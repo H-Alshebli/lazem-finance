@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   C,
   DEPARTMENTS,
@@ -126,6 +126,37 @@ function OnetimeView({
     setForm(buildInitialForm());
   };
 
+  useEffect(() => {
+    if (!showAdd) {
+      setForm(buildInitialForm());
+    }
+  }, [creatorDepartment, isITRequester, showAdd]);
+
+  useEffect(() => {
+    if (!editModal) {
+      setEditForm({
+        title: "",
+        category: "Equipment",
+        department: getDefaultTargetDepartment(),
+        approvalDepartment: isITRequester ? "IT" : creatorDepartment || "",
+        creatorDepartment: creatorDepartment || "",
+        amount: "",
+        currency: "SAR",
+        priority: "medium",
+        dueDate: "",
+        notes: "",
+        invoices: [],
+      });
+    }
+  }, [creatorDepartment, isITRequester, editModal]);
+
+  const hasValidInvoiceLink = (files = []) =>
+    files.every(
+      (f) =>
+        (typeof f?.downloadUrl === "string" && f.downloadUrl.trim()) ||
+        (typeof f?.dataUrl === "string" && f.dataUrl.trim())
+    );
+
   const validateRequestForm = (data, isEdit = false) => {
     if (!data.title?.trim()) {
       showNotif("Title is required", "error");
@@ -162,6 +193,14 @@ function OnetimeView({
       return false;
     }
 
+    if (!hasValidInvoiceLink(data.invoices)) {
+      showNotif(
+        "One or more quotation files are missing a valid file link. Please re-upload them.",
+        "error"
+      );
+      return false;
+    }
+
     return true;
   };
 
@@ -187,9 +226,7 @@ function OnetimeView({
       submittedById: currentUser?.uid || currentUser?.id,
       submittedByEmail: currentUser?.email || "",
       requestDate: today(),
-
       requestedPaymentDate: form.dueDate,
-
       status: "pending_manager",
       history: [
         {
@@ -663,11 +700,7 @@ function OnetimeView({
                       )
                     )}
 
-                    {r.financeApproval && (
-                      <span style={{ color: C.green }}>
-                        ✓ Finance approved
-                      </span>
-                    )}
+                    {r.financeApproval && <span style={{ color: C.green }}>✓ Finance approved</span>}
 
                     {r.financeSchedule && (
                       <span style={{ color: C.green }}>
@@ -693,9 +726,7 @@ function OnetimeView({
                     )}
 
                     {r.purchaseInvoices?.length > 0 && (
-                      <span style={{ color: "#14B8A6" }}>
-                        ✓ Purchase invoice uploaded
-                      </span>
+                      <span style={{ color: "#14B8A6" }}>✓ Purchase invoice uploaded</span>
                     )}
                   </div>
 
@@ -761,6 +792,7 @@ function OnetimeView({
                             download={f.name}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             style={{
                               background: C.green + "12",
                               border: `1px solid ${C.green}33`,
@@ -768,6 +800,9 @@ function OnetimeView({
                               padding: "2px 8px",
                               color: C.green,
                               textDecoration: "none",
+                              position: "relative",
+                              zIndex: 5,
+                              pointerEvents: "auto",
                             }}
                           >
                             ⬇ {f.name}
@@ -813,6 +848,7 @@ function OnetimeView({
                             download={f.name}
                             target="_blank"
                             rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
                             style={{
                               background: "#14B8A612",
                               border: `1px solid #14B8A633`,
@@ -820,6 +856,9 @@ function OnetimeView({
                               padding: "2px 8px",
                               color: "#14B8A6",
                               textDecoration: "none",
+                              position: "relative",
+                              zIndex: 5,
+                              pointerEvents: "auto",
                             }}
                           >
                             ⬇ {f.name}
@@ -1129,11 +1168,7 @@ function OnetimeView({
                     <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
                       DEPARTMENT
                     </label>
-                    <input
-                      className="inp"
-                      value={creatorDepartment || "-"}
-                      readOnly
-                    />
+                    <input className="inp" value={creatorDepartment || "-"} readOnly />
                   </div>
                 )}
               </div>
@@ -1299,11 +1334,7 @@ function OnetimeView({
                     <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
                       DEPARTMENT
                     </label>
-                    <input
-                      className="inp"
-                      value={creatorDepartment || "-"}
-                      readOnly
-                    />
+                    <input className="inp" value={creatorDepartment || "-"} readOnly />
                   </div>
                 )}
               </div>
@@ -1394,11 +1425,7 @@ function OnetimeView({
             </div>
 
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
-              <button
-                className="btn-primary"
-                onClick={saveEditRequest}
-                style={{ flex: 1 }}
-              >
+              <button className="btn-primary" onClick={saveEditRequest} style={{ flex: 1 }}>
                 Save Changes
               </button>
               <button className="btn-ghost" onClick={() => setEditModal(null)}>

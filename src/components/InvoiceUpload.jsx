@@ -3,11 +3,17 @@ import { C } from "../utils/constants";
 import { uid, today } from "../utils/helpers";
 import { uploadFiles } from "../firebase/storage";
 
-// Use Firebase Storage only in production, not localhost
+// Use Firebase Storage whenever Firebase env is available, including localhost
 const isFirebaseMode =
   typeof window !== "undefined" &&
-  !!import.meta.env.VITE_FIREBASE_API_KEY &&
-  !window.location.hostname.includes("localhost");
+  !!import.meta.env.VITE_FIREBASE_API_KEY;
+
+function hasValidFileLink(file) {
+  return (
+    (typeof file?.downloadUrl === "string" && file.downloadUrl.trim()) ||
+    (typeof file?.dataUrl === "string" && file.dataUrl.trim())
+  );
+}
 
 function InvoiceUpload({ invoices = [], onChange }) {
   const fileRef = useRef(null);
@@ -35,14 +41,15 @@ function InvoiceUpload({ invoices = [], onChange }) {
           "attachments"
         );
 
-        onChange([...safeInvoices, ...uploaded]);
+        const validUploaded = uploaded.filter(hasValidFileLink);
+        onChange([...safeInvoices, ...validUploaded]);
       } catch (e) {
         console.error("Upload failed:", e);
-        readAsDataUrls(fileArr);
       } finally {
         setUploading(false);
       }
     } else {
+      // Fallback only if Firebase is truly unavailable
       readAsDataUrls(fileArr);
     }
   };
@@ -53,6 +60,7 @@ function InvoiceUpload({ invoices = [], onChange }) {
 
     fileArr.forEach((f, i) => {
       const reader = new FileReader();
+
       reader.onload = (e) => {
         results[i] = {
           id: uid(),
@@ -66,7 +74,18 @@ function InvoiceUpload({ invoices = [], onChange }) {
         completed++;
 
         if (completed === fileArr.length) {
-          onChange([...safeInvoices, ...results]);
+          const validResults = results.filter(hasValidFileLink);
+          onChange([...safeInvoices, ...validResults]);
+        }
+      };
+
+      reader.onerror = () => {
+        completed++;
+        console.error("Failed to read file:", f.name);
+
+        if (completed === fileArr.length) {
+          const validResults = results.filter(hasValidFileLink);
+          onChange([...safeInvoices, ...validResults]);
         }
       };
 
@@ -174,6 +193,7 @@ function InvoiceUpload({ invoices = [], onChange }) {
                     download={inv.name}
                     target="_blank"
                     rel="noreferrer"
+                    onClick={(e) => e.stopPropagation()}
                     style={{
                       color: C.accent,
                       maxWidth: 140,
@@ -181,6 +201,9 @@ function InvoiceUpload({ invoices = [], onChange }) {
                       textOverflow: "ellipsis",
                       whiteSpace: "nowrap",
                       textDecoration: "none",
+                      position: "relative",
+                      zIndex: 5,
+                      pointerEvents: "auto",
                     }}
                   >
                     {inv.name}

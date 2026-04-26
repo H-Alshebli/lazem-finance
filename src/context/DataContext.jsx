@@ -65,7 +65,6 @@ export function DataProvider({ children }) {
     return () => subs.forEach((u) => u && u());
   }, [currentUser?.uid]);
 
-  // ── Basic Firestore wrappers ─────────────────────────────
   const addRecurring = (data) =>
     addItem(COL.recurring, {
       ...sanitize(data),
@@ -150,40 +149,23 @@ export function DataProvider({ children }) {
     await updateUserRole(userId, newRole);
   };
 
-  // ── File sanitize / restore helpers ──────────────────────
+  // Keep only Firestore-safe file fields
   const cacheFileData = (files) => {
-    if (!files) return [];
+    if (!Array.isArray(files)) return [];
 
-    return files.map((f) => {
-      if (f.dataUrl && f.id) {
-        try {
-          sessionStorage.setItem(`file_${f.id}`, f.dataUrl);
-        } catch (e) {
-          console.warn("Failed to cache file dataUrl:", e);
-        }
-      }
-
-      return {
-        id: f.id || "",
-        name: f.name || "",
-        size: f.size || 0,
-        type: f.type || "",
-        uploadedAt: f.uploadedAt || "",
-        downloadUrl: f.downloadUrl || "",
-      };
-    });
+    return files.map((f) => ({
+      id: f?.id || "",
+      name: f?.name || "",
+      size: f?.size || 0,
+      type: f?.type || "",
+      uploadedAt: f?.uploadedAt || "",
+      downloadUrl: f?.downloadUrl || "",
+    }));
   };
 
   const restoreFileData = (files) => {
-    if (!files) return [];
-
-    return files.map((f) => {
-      const cached = f.id ? sessionStorage.getItem(`file_${f.id}`) : null;
-      return {
-        ...f,
-        ...(cached ? { dataUrl: cached } : {}),
-      };
-    });
+    if (!Array.isArray(files)) return [];
+    return files.map((f) => ({ ...f }));
   };
 
   const sanitize = (item) => {
@@ -224,7 +206,6 @@ export function DataProvider({ children }) {
         : item.receiptUploaded,
     }));
 
-  // ── Smart setters used by existing pages ─────────────────
   const smartSetRecurring = (fn) => {
     const newItems = typeof fn === "function" ? fn(recurring) : fn;
 
@@ -273,7 +254,6 @@ export function DataProvider({ children }) {
   return (
     <DataContext.Provider
       value={{
-        // Data
         recurring,
         onetime,
         entitlements,
@@ -284,7 +264,6 @@ export function DataProvider({ children }) {
         allUsers,
         unreadCount,
 
-        // Direct mutations
         addRecurring,
         updateRecurring,
         deleteRecurring,
@@ -293,12 +272,10 @@ export function DataProvider({ children }) {
         addEntitlement,
         updateEntitlement,
 
-        // Backward-compatible setters
         setRecurring: smartSetRecurring,
         setOnetime: smartSetOnetime,
         setEntitlements: smartSetEntitlements,
 
-        // System actions
         logAudit,
         addNotification,
         dismissNotification,

@@ -74,7 +74,6 @@ function ApprovalsOneTimeView({
     item.approvalDepartment || item.department || "";
 
   const deptFilter = (item) => myManagedDepts.includes(getApprovalDepartment(item));
-
   const filterMgr = (items) => (canManager ? items.filter(deptFilter) : []);
 
   const addHistory = (item, status, note) => ({
@@ -564,7 +563,7 @@ function ApprovalsOneTimeView({
     const [open, setOpen] = useState(false);
     const sc = statusConfig[r.status] || { label: r.status, color: C.muted };
     const pc = priorityConfig[r.priority] || priorityConfig.medium;
-    const showAttachments = canApprove || canSeeAll;
+  const showAttachments = canSeeAll || canManager || canCEO || canFinance;
     const displayRequestedDate = r.requestedPaymentDate || r.dueDate;
     const requestedFor = r.department || "-";
     const approvalFlow = getApprovalDepartment(r) || "-";
@@ -663,11 +662,14 @@ function ApprovalsOneTimeView({
                   gap: 6,
                   flexWrap: "wrap",
                   alignItems: "center",
+                  position: "relative",
+                  zIndex: 1,
                 }}
               >
                 <span>📎 Quotations:</span>
                 {r.invoices.map((f) => {
                   const fileUrl = f.downloadUrl || f.dataUrl;
+
                   return fileUrl ? (
                     <a
                       key={f.id || f.name}
@@ -675,6 +677,7 @@ function ApprovalsOneTimeView({
                       download={f.name}
                       target="_blank"
                       rel="noreferrer"
+                      onClick={(e) => e.stopPropagation()}
                       style={{
                         background: C.card,
                         border: `1px solid ${C.accent}44`,
@@ -683,6 +686,9 @@ function ApprovalsOneTimeView({
                         color: C.accent,
                         textDecoration: "none",
                         cursor: "pointer",
+                        position: "relative",
+                        zIndex: 5,
+                        pointerEvents: "auto",
                       }}
                     >
                       ⬇ {f.name}
@@ -753,6 +759,8 @@ function ApprovalsOneTimeView({
                   gap: 6,
                   flexWrap: "wrap",
                   alignItems: "center",
+                  position: "relative",
+                  zIndex: 1,
                 }}
               >
                 <span>🧾 Purchase Invoice:</span>
@@ -769,6 +777,8 @@ function ApprovalsOneTimeView({
                         border: `1px solid #14B8A633`,
                         borderRadius: 6,
                         padding: "3px 8px",
+                        position: "relative",
+                        zIndex: 2,
                       }}
                     >
                       <span style={{ color: "#14B8A6" }}>📄 {f.name}</span>
@@ -777,6 +787,7 @@ function ApprovalsOneTimeView({
                         download={f.name}
                         target="_blank"
                         rel="noreferrer"
+                        onClick={(e) => e.stopPropagation()}
                         style={{
                           background: "#14B8A6",
                           color: "#fff",
@@ -786,6 +797,9 @@ function ApprovalsOneTimeView({
                           fontSize: 10,
                           fontWeight: 700,
                           whiteSpace: "nowrap",
+                          position: "relative",
+                          zIndex: 5,
+                          pointerEvents: "auto",
                         }}
                       >
                         Download
