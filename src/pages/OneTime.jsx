@@ -108,9 +108,10 @@ function OnetimeView({
     ["pending_manager", "Pending Manager"],
     ["pending_ceo_1", "CEO Approval"],
     ["pending_finance", "Finance Approval"],
-    ["pending_schedule_finance", "Finance Schedule"],
-    ["pending_schedule_ceo", "CEO Schedule"],
-    ["pending_bank", "Bank Release"],
+    ["pending_schedule_preparation", "Schedule Preparation"],
+    ["pending_schedule_review", "Schedule Review"],
+    ["pending_schedule_final_approval", "Final Schedule Approval"],
+    ["pending_bank_release", "Bank Release"],
     ["pending_receipt", "Upload Receipt"],
     ["pending_invoice", "Upload Invoice"],
     ["paid_onetime", "Paid"],
@@ -543,7 +544,9 @@ function OnetimeView({
         {filtered.map((r) => {
           const sc = statusConfig[r.status] || { label: r.status, color: C.muted };
           const pc = priorityConfig[r.priority] || priorityConfig.medium;
-          const displayRequestedDate = r.requestedPaymentDate || r.dueDate;
+          const displayRequestedDate =
+            r.financeSchedule?.approvedDate || r.requestedPaymentDate || r.dueDate;
+
           const isOverdue =
             displayRequestedDate &&
             daysUntil(displayRequestedDate) < 0 &&
@@ -556,9 +559,10 @@ function OnetimeView({
             r.submittedById === currentUser?.id;
 
           const inPayment = [
-            "pending_schedule_finance",
-            "pending_schedule_ceo",
-            "pending_bank",
+            "pending_schedule_preparation",
+            "pending_schedule_review",
+            "pending_schedule_final_approval",
+            "pending_bank_release",
             "pending_receipt",
           ].includes(r.status);
 
@@ -700,17 +704,23 @@ function OnetimeView({
                       )
                     )}
 
-                    {r.financeApproval && <span style={{ color: C.green }}>✓ Finance approved</span>}
+                    {r.financeApproval && (
+                      <span style={{ color: C.green }}>✓ Finance approved</span>
+                    )}
 
                     {r.financeSchedule && (
                       <span style={{ color: C.green }}>
-                        ✓ Finance Schedule: {fmtDate(r.financeSchedule.approvedDate)}
+                        ✓ Schedule prepared: {fmtDate(r.financeSchedule.approvedDate)}
                       </span>
+                    )}
+
+                    {r.financeSchedule?.reviewedAt && (
+                      <span style={{ color: C.green }}>✓ Schedule reviewed</span>
                     )}
 
                     {r.ceoScheduleApproval && (
                       <span style={{ color: C.green }}>
-                        ✓ CEO schedule approved
+                        ✓ Final schedule approved
                         {r.ceoScheduleApproval.autoApproved ? " (Auto)" : ""}
                       </span>
                     )}
@@ -726,7 +736,9 @@ function OnetimeView({
                     )}
 
                     {r.purchaseInvoices?.length > 0 && (
-                      <span style={{ color: "#14B8A6" }}>✓ Purchase invoice uploaded</span>
+                      <span style={{ color: "#14B8A6" }}>
+                        ✓ Purchase invoice uploaded
+                      </span>
                     )}
                   </div>
 
@@ -744,7 +756,7 @@ function OnetimeView({
                       }}
                     >
                       <div style={{ color: C.purple, fontWeight: 700 }}>
-                        Finance Approved Schedule
+                        Payment Schedule
                       </div>
                       <div style={{ color: C.text }}>
                         Approved Date: {fmtDate(r.financeSchedule.approvedDate)}
@@ -893,7 +905,7 @@ function OnetimeView({
                         marginBottom: 8,
                       }}
                     >
-                      ⏳ Payment is being processed by Finance / CEO schedule flow
+                      ⏳ Payment is being processed through schedule / release workflow
                     </div>
                   )}
 

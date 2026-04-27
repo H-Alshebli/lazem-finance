@@ -117,7 +117,8 @@ export const ROLE_CONFIG = {
       "pending_ceo_2",
       "pending_ceo_1_rec",
       "pending_ceo_2_rec",
-      "pending_schedule_ceo",
+      "pending_schedule_final_approval",
+      "pending_bank_release",
     ],
     canSubmit: false,
     canPay: false,
@@ -144,7 +145,9 @@ export const ROLE_CONFIG = {
       "pending_finance_rec",
       "pending_pay",
       "pending_pay_rec",
-      "pending_schedule_finance",
+      "pending_schedule_preparation",
+      "pending_schedule_review",
+      "pending_bank_release",
     ],
     canSubmit: true,
     canPay: true,
@@ -205,8 +208,10 @@ export const ROLE_CONFIG = {
       "pending_finance_rec",
       "pending_pay",
       "pending_pay_rec",
-      "pending_schedule_finance",
-      "pending_schedule_ceo",
+      "pending_schedule_preparation",
+      "pending_schedule_review",
+      "pending_schedule_final_approval",
+      "pending_bank_release",
     ],
     canSubmit: true,
     canPay: true,
@@ -441,9 +446,22 @@ export const statusConfig = {
   pending_finance: { label: "Pending Finance", color: "#F59E0B" },
   pending_ceo_2: { label: "Pending CEO – Release", color: "#EC4899" },
 
-  pending_schedule_finance: { label: "Finance Schedule", color: "#8B5CF6" },
-  pending_schedule_ceo: { label: "CEO Schedule Approval", color: "#C026D3" },
-  pending_bank: { label: "Bank Release", color: "#3B82F6" },
+  pending_schedule_preparation: {
+    label: "Schedule Preparation",
+    color: "#8B5CF6",
+  },
+  pending_schedule_review: {
+    label: "Schedule Review",
+    color: "#7C3AED",
+  },
+  pending_schedule_final_approval: {
+    label: "Final Schedule Approval",
+    color: "#C026D3",
+  },
+  pending_bank_release: {
+    label: "Bank Release",
+    color: "#3B82F6",
+  },
   pending_receipt: { label: "Upload Receipt", color: "#10B981" },
   pending_invoice: { label: "Upload Invoice", color: "#14B8A6" },
 
@@ -471,9 +489,22 @@ export const GENERAL_STEPS = [
   { key: "pending_manager", label: "Manager", color: "#F97316" },
   { key: "pending_ceo_1", label: "CEO Approval", color: "#EC4899" },
   { key: "pending_finance", label: "Finance Approval", color: "#F59E0B" },
-  { key: "pending_schedule_finance", label: "Finance Schedule", color: "#8B5CF6" },
-  { key: "pending_schedule_ceo", label: "CEO Schedule", color: "#C026D3" },
-  { key: "pending_bank", label: "Bank Release", color: "#3B82F6" },
+  {
+    key: "pending_schedule_preparation",
+    label: "Schedule Preparation",
+    color: "#8B5CF6",
+  },
+  {
+    key: "pending_schedule_review",
+    label: "Schedule Review",
+    color: "#7C3AED",
+  },
+  {
+    key: "pending_schedule_final_approval",
+    label: "Final Schedule Approval",
+    color: "#C026D3",
+  },
+  { key: "pending_bank_release", label: "Bank Release", color: "#3B82F6" },
   { key: "pending_receipt", label: "Upload Receipt", color: "#10B981" },
   { key: "pending_invoice", label: "Employee Invoice", color: "#14B8A6" },
   { key: "paid_onetime", label: "Paid", color: "#10B981" },
@@ -501,18 +532,19 @@ export const RECURRING_STEPS = [
 
 export const COMPANY_OPTIONS = [
   "Lazem Medical Services",
-  "Lazem Safety",
+  "Lazem Holding",
   "Lazem Training",
 ];
 
 export const BANK_OPTIONS = [
-  "Al Rajhi Bank",
-  "Saudi National Bank",
-  "Riyad Bank",
-  "Banque Saudi Fransi",
-  "Arab National Bank",
-  "Alinma Bank",
-  "Bank AlJazira",
+  "Al Rajhi Bank - Lazem Medical",
+  "Al Rajhi Bank - Lazem Holding",
+  "Al Rajhi Bank - Lazem Training",
+  "Al Rajhi Bank - Lazem Training Center",
+  "ALbilad Bank - Lazem Medical",
+  "ALbilad Bank - Lazem Holding",
+  "ALbilad Bank - Lazem Training",
+  
 ];
 
 export const ALL_PAGES = [

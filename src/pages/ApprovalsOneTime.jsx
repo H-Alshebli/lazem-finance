@@ -96,14 +96,17 @@ function ApprovalsOneTimeView({
     ),
     pending_ceo_1: (onetime || []).filter((o) => o.status === "pending_ceo_1"),
     pending_finance: (onetime || []).filter((o) => o.status === "pending_finance"),
-    pending_schedule_finance: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_schedule_finance")
+    pending_schedule_preparation: canFinance
+      ? (onetime || []).filter((o) => o.status === "pending_schedule_preparation")
       : [],
-    pending_schedule_ceo: canCEO || canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_schedule_ceo")
+    pending_schedule_review: canFinance
+      ? (onetime || []).filter((o) => o.status === "pending_schedule_review")
       : [],
-    pending_bank: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_bank")
+    pending_schedule_final_approval: canCEO || canFinance
+      ? (onetime || []).filter((o) => o.status === "pending_schedule_final_approval")
+      : [],
+    pending_bank_release: canCEO || canFinance
+      ? (onetime || []).filter((o) => o.status === "pending_bank_release")
       : [],
     pending_receipt: canFinance
       ? (onetime || []).filter((o) => o.status === "pending_receipt")
@@ -177,8 +180,8 @@ function ApprovalsOneTimeView({
                 ...o,
                 financeApproval: { by: currentUser?.name, date: today() },
               },
-              "pending_schedule_finance",
-              "Finance approved → create finance schedule"
+              "pending_schedule_preparation",
+              "Finance approved → Schedule preparation"
             )
           : o
       )
@@ -186,10 +189,10 @@ function ApprovalsOneTimeView({
 
     addNotif?.(
       "payment_due",
-      "Finance Schedule Required",
-      `"${item?.title}" fully approved — finance must set the schedule`
+      "Schedule Preparation Required",
+      `"${item?.title}" approved by Finance — prepare the payment schedule`
     );
-    showNotif("Finance approved → Schedule stage!");
+    showNotif("Finance approved → Schedule preparation!");
   };
 
   const validateScheduleForm = () => {
@@ -215,7 +218,7 @@ function ApprovalsOneTimeView({
     return true;
   };
 
-  const openFinanceScheduleModal = (r) => {
+  const openScheduleModal = (r) => {
     const defaultDate =
       r.financeSchedule?.approvedDate ||
       r.requestedPaymentDate ||
@@ -232,25 +235,10 @@ function ApprovalsOneTimeView({
     });
   };
 
-  const saveFinanceSchedule = (id) => {
+  const saveSchedulePreparation = (id) => {
     if (!validateScheduleForm()) return;
 
     const item = (onetime || []).find((o) => o.id === id);
-    const hadCEOApproval = !!item?.ceoScheduleApproval;
-    const currentSchedule = item?.financeSchedule || null;
-
-    const changedAfterCEO =
-      hadCEOApproval &&
-      (currentSchedule?.approvedDate !== scheduleForm.approvedDate ||
-        currentSchedule?.method !== scheduleForm.method ||
-        currentSchedule?.companyName !== scheduleForm.companyName ||
-        (scheduleForm.method === "Bank Transfer"
-          ? currentSchedule?.bankName !== scheduleForm.bankName
-          : false));
-
-    const historyNote = changedAfterCEO
-      ? `Finance rescheduled after CEO approval → back to CEO approval (${scheduleForm.approvedDate} via ${scheduleForm.method})`
-      : `Finance scheduled payment for ${scheduleForm.approvedDate} via ${scheduleForm.method}`;
 
     setOnetime((p) =>
       p.map((o) =>
@@ -258,6 +246,8 @@ function ApprovalsOneTimeView({
           ? addHistory(
               {
                 ...o,
+                requestedPaymentDate: scheduleForm.approvedDate,
+                dueDate: scheduleForm.approvedDate,
                 financeSchedule: {
                   approvedDate: scheduleForm.approvedDate,
                   method: scheduleForm.method,
@@ -271,10 +261,9 @@ function ApprovalsOneTimeView({
                   scheduledBy: currentUser?.name || "Finance",
                   requestedDate: o.requestedPaymentDate || o.dueDate || "",
                 },
-                ceoScheduleApproval: changedAfterCEO ? null : o.ceoScheduleApproval,
               },
-              "pending_schedule_ceo",
-              historyNote
+              "pending_schedule_review",
+              `Schedule prepared for ${scheduleForm.approvedDate} via ${scheduleForm.method} → Schedule review`
             )
           : o
       )
@@ -282,8 +271,8 @@ function ApprovalsOneTimeView({
 
     addNotif?.(
       "approval_required",
-      "CEO Schedule Approval Needed",
-      `"${item?.title}" schedule is ready for CEO approval`
+      "Schedule Review Required",
+      `"${item?.title}" is ready for schedule review`
     );
 
     setScheduleModal(null);
@@ -295,14 +284,49 @@ function ApprovalsOneTimeView({
       note: "",
     });
 
-    showNotif(
-      changedAfterCEO
-        ? "Rescheduled → back to CEO approval!"
-        : "Finance schedule saved → CEO schedule approval!"
-    );
+    showNotif("Schedule prepared → Review stage!");
   };
 
-  const approveCEOSchedule = (id) => {
+  const sendScheduleReviewToCEO = (id) => {
+    const item = (onetime || []).find((o) => o.id === id);
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? addHistory(
+              {
+                ...o,
+                financeSchedule: {
+                  ...(o.financeSchedule || {}),
+                  reviewedAt: today(),
+                  reviewedBy: currentUser?.name || "Finance",
+                },
+              },
+              "pending_schedule_final_approval",
+              "Schedule reviewed by Finance → Final approval"
+            )
+          : o
+      )
+    );
+
+    addNotif?.(
+      "approval_required",
+      "Final Schedule Approval Needed",
+      `"${item?.title}" is ready for CEO final schedule approval`
+    );
+
+    showNotif("Schedule review completed → CEO final approval!");
+  };
+
+  const openCeoRescheduleModal = (r) => {
+    setCeoRescheduleModal(r.id);
+    setCeoRescheduleForm({
+      date: r.financeSchedule?.approvedDate || r.requestedPaymentDate || r.dueDate || "",
+      note: "",
+    });
+  };
+
+  const approveFinalSchedule = (id) => {
     const item = (onetime || []).find((o) => o.id === id);
 
     setOnetime((p) =>
@@ -317,8 +341,8 @@ function ApprovalsOneTimeView({
                   autoApproved: false,
                 },
               },
-              "pending_bank",
-              "CEO approved finance schedule → Bank release"
+              "pending_bank_release",
+              "CEO final schedule approval completed → Bank release"
             )
           : o
       )
@@ -327,18 +351,10 @@ function ApprovalsOneTimeView({
     addNotif?.(
       "payment_due",
       "Ready for Bank Release",
-      `"${item?.title}" schedule approved by CEO`
+      `"${item?.title}" is ready for bank release`
     );
 
-    showNotif("CEO approved schedule → Bank release!");
-  };
-
-  const openCeoRescheduleModal = (r) => {
-    setCeoRescheduleModal(r.id);
-    setCeoRescheduleForm({
-      date: r.financeSchedule?.approvedDate || "",
-      note: "",
-    });
+    showNotif("Final schedule approved → Bank release!");
   };
 
   const saveCeoReschedule = (id) => {
@@ -356,6 +372,8 @@ function ApprovalsOneTimeView({
           ? addHistory(
               {
                 ...o,
+                requestedPaymentDate: ceoRescheduleForm.date,
+                dueDate: ceoRescheduleForm.date,
                 financeSchedule: {
                   ...(o.financeSchedule || {}),
                   approvedDate: ceoRescheduleForm.date,
@@ -369,10 +387,10 @@ function ApprovalsOneTimeView({
                   autoApproved: false,
                 },
               },
-              "pending_bank",
-              `CEO rescheduled payment date from ${oldDate || "-"} to ${ceoRescheduleForm.date}${
+              "pending_bank_release",
+              `CEO finalized schedule date from ${oldDate || "-"} to ${ceoRescheduleForm.date}${
                 ceoRescheduleForm.note ? ` · Note: ${ceoRescheduleForm.note}` : ""
-              }`
+              } → Bank release`
             )
           : o
       )
@@ -380,7 +398,7 @@ function ApprovalsOneTimeView({
 
     setCeoRescheduleModal(null);
     setCeoRescheduleForm({ date: "", note: "" });
-    showNotif("CEO rescheduled and approved → Bank release!");
+    showNotif("CEO rescheduled and finalized → Bank release!");
   };
 
   const sendCeoNoteToFinance = (id) => {
@@ -399,7 +417,7 @@ function ApprovalsOneTimeView({
                 ...o,
                 ceoScheduleApproval: null,
               },
-              "pending_schedule_finance",
+              "pending_schedule_review",
               `CEO sent note to Finance: ${ceoFinanceNote}`
             )
           : o
@@ -409,12 +427,12 @@ function ApprovalsOneTimeView({
     addNotif?.(
       "approval_required",
       "CEO Note to Finance",
-      `CEO requested finance action on "${item?.title}"`
+      `CEO requested schedule revision for "${item?.title}"`
     );
 
     setCeoFinanceNoteModal(null);
     setCeoFinanceNote("");
-    showNotif("Returned to Finance with CEO note!");
+    showNotif("Returned to Finance schedule review!");
   };
 
   const saveNote = (id, note) => {
@@ -465,19 +483,43 @@ function ApprovalsOneTimeView({
     showNotif("Rejected.");
   };
 
-  const bankRelease = (id) => {
+  const openBankReleaseModal = (id, onBehalfOfCEO = false) => {
+    setBankModal({ id, onBehalfOfCEO });
+    setBankForm({
+      ref: "",
+      date: today(),
+      note: "",
+    });
+  };
+
+  const bankRelease = () => {
+    if (!bankModal?.id) return;
+
     if (!bankForm.ref.trim()) {
       showNotif("Reference number required", "error");
       return;
     }
 
+    const requestId = bankModal.id;
+    const onBehalfOfCEO = !!bankModal.onBehalfOfCEO;
+
     setOnetime((p) =>
       p.map((o) =>
-        o.id === id
+        o.id === requestId
           ? addHistory(
-              { ...o, bankRelease: { ...bankForm } },
+              {
+                ...o,
+                bankRelease: {
+                  ...bankForm,
+                  releasedBy: currentUser?.name || "Finance",
+                  releasedByRole: canCEO && !onBehalfOfCEO ? "ceo" : "finance",
+                  releasedOnBehalfOfCEO: onBehalfOfCEO,
+                },
+              },
               "pending_receipt",
-              `Bank released: Ref ${bankForm.ref}`
+              onBehalfOfCEO
+                ? `Bank released on behalf of CEO: Ref ${bankForm.ref}`
+                : `Bank released by CEO: Ref ${bankForm.ref}`
             )
           : o
       )
@@ -563,8 +605,9 @@ function ApprovalsOneTimeView({
     const [open, setOpen] = useState(false);
     const sc = statusConfig[r.status] || { label: r.status, color: C.muted };
     const pc = priorityConfig[r.priority] || priorityConfig.medium;
-  const showAttachments = canSeeAll || canManager || canCEO || canFinance;
-    const displayRequestedDate = r.requestedPaymentDate || r.dueDate;
+    const showAttachments = canSeeAll || canManager || canCEO || canFinance;
+    const displayRequestedDate =
+      r.financeSchedule?.approvedDate || r.requestedPaymentDate || r.dueDate;
     const requestedFor = r.department || "-";
     const approvalFlow = getApprovalDepartment(r) || "-";
 
@@ -724,7 +767,7 @@ function ApprovalsOneTimeView({
                 }}
               >
                 <div style={{ color: C.purple, fontWeight: 700 }}>
-                  Finance Schedule
+                  Payment Schedule
                 </div>
                 <div style={{ color: C.text }}>
                   Approved Date: {fmtDate(r.financeSchedule.approvedDate)}
@@ -825,9 +868,10 @@ function ApprovalsOneTimeView({
 
             {(canFinance || canCEO) &&
               [
-                "pending_schedule_finance",
-                "pending_schedule_ceo",
-                "pending_bank",
+                "pending_schedule_preparation",
+                "pending_schedule_review",
+                "pending_schedule_final_approval",
+                "pending_bank_release",
                 "pending_receipt",
                 "pending_invoice",
               ].includes(r.status) && (
@@ -845,18 +889,23 @@ function ApprovalsOneTimeView({
                 >
                   <span style={{ color: r.financeSchedule ? C.green : C.muted }}>
                     {r.financeSchedule
-                      ? `✓ Finance Schedule: ${fmtDate(r.financeSchedule.approvedDate)}`
-                      : "○ Finance schedule pending"}
+                      ? `✓ Schedule Prepared: ${fmtDate(r.financeSchedule.approvedDate)}`
+                      : "○ Schedule preparation pending"}
+                  </span>
+                  <span style={{ color: r.financeSchedule?.reviewedAt ? C.green : C.muted }}>
+                    {r.financeSchedule?.reviewedAt
+                      ? "✓ Schedule reviewed"
+                      : "○ Schedule review pending"}
                   </span>
                   <span style={{ color: r.ceoScheduleApproval ? C.green : C.muted }}>
                     {r.ceoScheduleApproval
-                      ? `✓ CEO Schedule Approved${r.ceoScheduleApproval.autoApproved ? " (Auto)" : ""}`
-                      : "○ CEO schedule pending"}
+                      ? `✓ Final schedule approved${r.ceoScheduleApproval.autoApproved ? " (Auto)" : ""}`
+                      : "○ Final approval pending"}
                   </span>
                   <span style={{ color: r.bankRelease ? C.green : C.muted }}>
                     {r.bankRelease
                       ? `✓ Released: Ref ${r.bankRelease.ref}`
-                      : "○ Pending bank"}
+                      : "○ Bank release pending"}
                   </span>
                   <span style={{ color: r.receiptUploaded ? C.green : C.muted }}>
                     {r.receiptUploaded ? `✓ Receipt uploaded` : "○ Receipt pending"}
@@ -1032,150 +1081,171 @@ function ApprovalsOneTimeView({
       items: queues.pending_finance,
       canApprove: canFinance,
       onApprove: approveFinance,
-      btnLabel: "✓ Approve → Schedule",
+      btnLabel: "✓ Approve → Schedule Preparation",
       onRejectFn: rejectOneTime,
     },
-    {
-      label: "LEVEL 4 — FINANCE SCHEDULE",
-      color: C.purple,
-      items: queues.pending_schedule_finance,
-      canApprove: canFinance,
-      onApprove: null,
-      btnLabel: "",
-      onRejectFn: null,
-      extra: (r) =>
-        canFinance && (
-          <button
-            className="btn-primary"
-            onClick={() => openFinanceScheduleModal(r)}
-            style={{ fontSize: 12, padding: "7px 16px" }}
-          >
-            📅 Schedule / Reschedule
-          </button>
-        ),
-    },
-    {
-      label: "LEVEL 5 — CEO SCHEDULE APPROVAL",
-      color: "#C026D3",
-      items: queues.pending_schedule_ceo,
-      canApprove: canCEO,
-      onApprove: approveCEOSchedule,
-      btnLabel: "✓ Approve Schedule",
-      onRejectFn: rejectOneTime,
-      extra: (r) => (
-        <>
-          {canCEO && (
-            <button
-              className="btn-primary"
-              onClick={() => openCeoRescheduleModal(r)}
-              style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginBottom: 6 }}
-            >
-              📅 Reschedule
-            </button>
-          )}
-          {canCEO && (
-            <button
-              onClick={() => {
-                setCeoFinanceNoteModal(r.id);
-                setCeoFinanceNote("");
-              }}
-              style={{
-                fontSize: 12,
-                padding: "6px 16px",
-                background: C.subtle,
-                border: `1px solid ${C.border}`,
-                borderRadius: 8,
-                color: C.gold,
-                cursor: "pointer",
-                width: "100%",
-                marginBottom: 6,
-              }}
-            >
-              📝 Send to Finance
-            </button>
-          )}
-          {canFinance && (
-            <button
-              className="btn-primary"
-              onClick={() => openFinanceScheduleModal(r)}
-              style={{ fontSize: 12, padding: "7px 16px", width: "100%" }}
-            >
-              📅 Finance Reschedule
-            </button>
-          )}
-        </>
-      ),
-    },
-    {
-      label: "LEVEL 6 — BANK RELEASE",
-      color: C.accent,
-      items: queues.pending_bank,
-      canApprove: canFinance,
-      onApprove: null,
-      btnLabel: "",
-      onRejectFn: null,
-      extra: (r) => (
-        <>
-          {canFinance && (
-            <button
-              className="btn-primary"
-              onClick={() => openFinanceScheduleModal(r)}
-              style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginBottom: 6 }}
-            >
-              📅 Reschedule Before Release
-            </button>
-          )}
-          {canFinance && (
-            <button
-              className="btn-primary"
-              onClick={() => setBankModal(r.id)}
-              style={{ fontSize: 12, padding: "7px 16px", width: "100%" }}
-            >
-              🏦 Release
-            </button>
-          )}
-        </>
-      ),
-    },
-    {
-      label: "LEVEL 7 — UPLOAD RECEIPT",
-      color: C.green,
-      items: queues.pending_receipt,
-      canApprove: canFinance,
-      onApprove: null,
-      btnLabel: "",
-      onRejectFn: null,
-      extra: (r) =>
-        canFinance && (
-          <button
-            className="btn-green"
-            onClick={() => setReceiptModal(r.id)}
-            style={{ fontSize: 12, padding: "7px 16px" }}
-          >
-            📎 Upload Receipt
-          </button>
-        ),
-    },
-    {
-      label: "LEVEL 8 — EMPLOYEE INVOICE",
-      color: "#14B8A6",
-      items: queues.pending_invoice,
-      canApprove: canFinance,
-      onApprove: null,
-      btnLabel: "",
-      onRejectFn: null,
-      extra: (r) =>
-        canFinance &&
-        r.purchaseInvoices?.length > 0 && (
-          <button
-            className="btn-green"
-            onClick={() => markPaidAfterInvoice(r.id)}
-            style={{ fontSize: 12, padding: "7px 16px" }}
-          >
-            ✅ Close & Paid
-          </button>
-        ),
-    },
+{
+  label: "LEVEL 4 — SCHEDULE PREPARATION",
+  color: C.purple,
+  items: queues.pending_schedule_preparation,
+  canApprove: canFinance,
+  onApprove: null,
+  btnLabel: "",
+  onRejectFn: null,
+  extra: (r) =>
+    canFinance && (
+      <button
+        className="btn-primary"
+        onClick={() => openScheduleModal(r)}
+        style={{ fontSize: 12, padding: "7px 16px" }}
+      >
+        📅 Prepare / Update Schedule
+      </button>
+    ),
+},
+{
+  label: "LEVEL 5 — SCHEDULE REVIEW",
+  color: "#7C3AED",
+  items: queues.pending_schedule_review,
+  canApprove: canFinance,
+  onApprove: sendScheduleReviewToCEO,
+  btnLabel: "✓ Confirm Review → CEO",
+  onRejectFn: null,
+  extra: (r) =>
+    canFinance && (
+      <button
+        className="btn-primary"
+        onClick={() => openScheduleModal(r)}
+        style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginTop: 6 }}
+      >
+        📅 Revise Schedule
+      </button>
+    ),
+},
+{
+  label: "LEVEL 6 — FINAL SCHEDULE APPROVAL",
+  color: "#C026D3",
+  items: queues.pending_schedule_final_approval,
+  canApprove: canCEO,
+  onApprove: approveFinalSchedule,
+  btnLabel: "✓ Final Approve",
+  onRejectFn: null,
+  extra: (r) => (
+    <>
+      {canCEO && (
+        <button
+          className="btn-primary"
+          onClick={() => openCeoRescheduleModal(r)}
+          style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginBottom: 6 }}
+        >
+          📅 Final Reschedule
+        </button>
+      )}
+      {canCEO && (
+        <button
+          onClick={() => {
+            setCeoFinanceNoteModal(r.id);
+            setCeoFinanceNote("");
+          }}
+          style={{
+            fontSize: 12,
+            padding: "6px 16px",
+            background: C.subtle,
+            border: `1px solid ${C.border}`,
+            borderRadius: 8,
+            color: C.gold,
+            cursor: "pointer",
+            width: "100%",
+            marginBottom: 6,
+          }}
+        >
+          📝 Return to Finance
+        </button>
+      )}
+    </>
+  ),
+},
+{
+  label: "LEVEL 7 — BANK RELEASE",
+  color: C.accent,
+  items: queues.pending_bank_release,
+  canApprove: false,
+  onApprove: null,
+  btnLabel: "",
+  onRejectFn: null,
+  extra: (r) => (
+    <>
+      {(canFinance || canCEO) && (
+        <button
+          className="btn-primary"
+          onClick={() => openScheduleModal(r)}
+          style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginBottom: 6 }}
+        >
+          📅 Reschedule Before Release
+        </button>
+      )}
+
+      {canCEO && (
+        <button
+          className="btn-primary"
+          onClick={() => openBankReleaseModal(r.id, false)}
+          style={{ fontSize: 12, padding: "7px 16px", width: "100%", marginBottom: 6 }}
+        >
+          🏦 CEO Release
+        </button>
+      )}
+
+      {canFinance && (
+        <button
+          className="btn-primary"
+          onClick={() => openBankReleaseModal(r.id, true)}
+          style={{ fontSize: 12, padding: "7px 16px", width: "100%" }}
+        >
+          🏦 Release on behalf of CEO
+        </button>
+      )}
+    </>
+  ),
+},
+{
+  label: "LEVEL 8 — UPLOAD RECEIPT",
+  color: C.green,
+  items: queues.pending_receipt,
+  canApprove: canFinance,
+  onApprove: null,
+  btnLabel: "",
+  onRejectFn: null,
+  extra: (r) =>
+    canFinance && (
+      <button
+        className="btn-green"
+        onClick={() => setReceiptModal(r.id)}
+        style={{ fontSize: 12, padding: "7px 16px" }}
+      >
+        📎 Upload Receipt
+      </button>
+    ),
+},
+{
+  label: "LEVEL 9 — EMPLOYEE INVOICE",
+  color: "#14B8A6",
+  items: queues.pending_invoice,
+  canApprove: canFinance,
+  onApprove: null,
+  btnLabel: "",
+  onRejectFn: null,
+  extra: (r) =>
+    canFinance &&
+    r.purchaseInvoices?.length > 0 && (
+      <button
+        className="btn-green"
+        onClick={() => markPaidAfterInvoice(r.id)}
+        style={{ fontSize: 12, padding: "7px 16px" }}
+      >
+        ✅ Close & Paid
+      </button>
+    ),
+},
   ];
 
   const totalPending = levels.reduce((sum, level) => sum + level.items.length, 0);
@@ -1341,7 +1411,7 @@ function ApprovalsOneTimeView({
                 color: C.purple,
               }}
             >
-              📅 Finance Schedule
+              📅 Schedule Preparation / Review
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 18 }}>
               {(onetime || []).find((o) => o.id === scheduleModal)?.title} · SAR{" "}
@@ -1447,7 +1517,7 @@ function ApprovalsOneTimeView({
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
               <button
                 className="btn-primary"
-                onClick={() => saveFinanceSchedule(scheduleModal)}
+                onClick={() => saveSchedulePreparation(scheduleModal)}
                 style={{ flex: 1 }}
               >
                 Save Schedule
@@ -1468,7 +1538,7 @@ function ApprovalsOneTimeView({
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16, color: "#C026D3" }}>
-              📅 CEO Reschedule
+              📅 Final CEO Reschedule
             </div>
 
             <div style={{ display: "grid", gap: 12 }}>
@@ -1508,7 +1578,7 @@ function ApprovalsOneTimeView({
                 onClick={() => saveCeoReschedule(ceoRescheduleModal)}
                 style={{ flex: 1 }}
               >
-                Save & Approve
+                Save & Final Approve
               </button>
               <button className="btn-ghost" onClick={() => setCeoRescheduleModal(null)}>
                 Cancel
@@ -1534,7 +1604,7 @@ function ApprovalsOneTimeView({
               rows={4}
               value={ceoFinanceNote}
               onChange={(e) => setCeoFinanceNote(e.target.value)}
-              placeholder="Explain what Finance should do..."
+              placeholder="Explain what Finance should revise..."
             />
 
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
@@ -1543,7 +1613,7 @@ function ApprovalsOneTimeView({
                 onClick={() => sendCeoNoteToFinance(ceoFinanceNoteModal)}
                 style={{ flex: 1 }}
               >
-                Send to Finance
+                Return to Finance
               </button>
               <button className="btn-ghost" onClick={() => setCeoFinanceNoteModal(null)}>
                 Cancel
@@ -1571,15 +1641,22 @@ function ApprovalsOneTimeView({
               🏦 Bank Release
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
-              {(onetime || []).find((o) => o.id === bankModal)?.title}
+              {(onetime || []).find((o) => o.id === bankModal?.id)?.title}
             </div>
-            {(onetime || []).find((o) => o.id === bankModal)?.financeSchedule && (
+            <div style={{ fontSize: 12, color: C.gold, marginBottom: 4 }}>
+              {bankModal?.onBehalfOfCEO ? "Release on behalf of CEO" : "CEO direct release"}
+            </div>
+            {(onetime || []).find((o) => o.id === bankModal?.id)?.financeSchedule && (
               <div style={{ fontSize: 12, color: C.gold, marginBottom: 18 }}>
                 Scheduled:{" "}
-                {fmtDate((onetime || []).find((o) => o.id === bankModal)?.financeSchedule?.approvedDate)} ·{" "}
-                {(onetime || []).find((o) => o.id === bankModal)?.financeSchedule?.method}
+                {fmtDate(
+                  (onetime || []).find((o) => o.id === bankModal?.id)?.financeSchedule?.approvedDate
+                )}{" "}
+                ·{" "}
+                {(onetime || []).find((o) => o.id === bankModal?.id)?.financeSchedule?.method}
               </div>
             )}
+
             <div style={{ display: "grid", gap: 12 }}>
               <div>
                 <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
@@ -1603,11 +1680,23 @@ function ApprovalsOneTimeView({
                   onChange={(e) => setBankForm({ ...bankForm, date: e.target.value })}
                 />
               </div>
+              <div>
+                <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                  NOTE
+                </label>
+                <input
+                  className="inp"
+                  value={bankForm.note}
+                  onChange={(e) => setBankForm({ ...bankForm, note: e.target.value })}
+                  placeholder="Optional release note..."
+                />
+              </div>
             </div>
+
             <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
               <button
                 className="btn-primary"
-                onClick={() => bankRelease(bankModal)}
+                onClick={bankRelease}
                 style={{ flex: 1 }}
               >
                 Confirm Release
