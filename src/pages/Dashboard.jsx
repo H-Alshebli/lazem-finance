@@ -808,100 +808,101 @@ function Dashboard({
     </div>
   );
 
-  const CompanyDetails = ({ rows }) => (
-    <div style={{ display: "grid", gap: 16 }}>
-      {rows.length === 0 ? (
-        <Empty text="No company data yet" />
-      ) : (
-        rows.map((company) => (
+const GroupDetails = ({ rows, groupLabel = "Group" }) => (
+  <div style={{ display: "grid", gap: 16 }}>
+    {rows.length === 0 ? (
+      <Empty text={`No ${groupLabel.toLowerCase()} data yet`} />
+    ) : (
+      rows.map((group) => (
+        <div
+          key={group.name}
+          style={{
+            background: C.subtle,
+            border: `1px solid ${C.border}`,
+            borderRadius: 12,
+            padding: 16,
+          }}
+        >
           <div
-            key={company.name}
             style={{
-              background: C.subtle,
-              border: `1px solid ${C.border}`,
-              borderRadius: 12,
-              padding: 16,
+              display: "flex",
+              justifyContent: "space-between",
+              gap: 12,
+              alignItems: "flex-start",
+              marginBottom: 10,
             }}
           >
-            <div
-              style={{
-                display: "flex",
-                justifyContent: "space-between",
-                gap: 12,
-                alignItems: "flex-start",
-                marginBottom: 10,
-              }}
-            >
-              <div>
-                <div
-                  style={{
-                    fontSize: 16,
-                    fontWeight: 800,
-                    marginBottom: 4,
-                  }}
-                >
-                  {company.name}
-                </div>
-
-                <div style={{ fontSize: 11, color: C.muted }}>
-                  {company.requests} requests · {company.pendingCount} approved awaiting release · {company.paidCount} paid
-                </div>
+            <div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 800,
+                  marginBottom: 4,
+                }}
+              >
+                {group.name}
               </div>
 
-              <div style={{ textAlign: "right" }}>
-                <div
-                  style={{
-                    fontSize: 18,
-                    color: C.accent,
-                    fontWeight: 900,
-                    fontFamily: "monospace",
-                  }}
-                >
-                  SAR {fmtAmt(Math.round(company.totalAmount))}
-                </div>
-
-                <div style={{ fontSize: 11, color: C.muted }}>
-                  Total amount
-                </div>
+              <div style={{ fontSize: 11, color: C.muted }}>
+                {group.requests} requests · {group.pendingCount} awaiting
+                release · {group.paidCount} paid
               </div>
             </div>
 
-            <div
-              style={{
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
-                gap: 10,
-                marginBottom: 10,
-              }}
-            >
-              <Card
-                label="Pending Amount"
-                val={`SAR ${fmtAmt(Math.round(company.pendingAmount))}`}
-                sub={`${company.pendingCount} awaiting release`}
-                color={C.gold}
-              />
+            <div style={{ textAlign: "right" }}>
+              <div
+                style={{
+                  fontSize: 18,
+                  color: C.accent,
+                  fontWeight: 900,
+                  fontFamily: "monospace",
+                }}
+              >
+                SAR {fmtAmt(Math.round(group.totalAmount))}
+              </div>
 
-              <Card
-                label="Paid"
-                val={`SAR ${fmtAmt(Math.round(company.paidAmount))}`}
-                sub={`${company.paidCount} requests`}
-                color={C.green}
-              />
-
-              <Card
-                label="Overdue"
-                val={`SAR ${fmtAmt(Math.round(company.overdueAmount))}`}
-                sub={`${company.overdueCount} overdue requests`}
-                color={C.red}
-              />
+              <div style={{ fontSize: 11, color: C.muted }}>
+                Total amount
+              </div>
             </div>
-
-            <RequestDetailsTable items={company.items || []} />
           </div>
-        ))
-      )}
-    </div>
-  );
+
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit,minmax(150px,1fr))",
+              gap: 10,
+              marginBottom: 10,
+            }}
+          >
+            <Card
+              label="Pending Amount"
+              val={`SAR ${fmtAmt(Math.round(group.pendingAmount))}`}
+              sub={`${group.pendingCount} awaiting release`}
+              color={C.gold}
+            />
+
+            <Card
+              label="Paid"
+              val={`SAR ${fmtAmt(Math.round(group.paidAmount))}`}
+              sub={`${group.paidCount} requests`}
+              color={C.green}
+            />
+
+            <Card
+              label="Overdue"
+              val={`SAR ${fmtAmt(Math.round(group.overdueAmount))}`}
+              sub={`${group.overdueCount} overdue requests`}
+              color={C.red}
+            />
+          </div>
+
+          <RequestDetailsTable items={group.items || []} />
+        </div>
+      ))
+    )}
+  </div>
+);
 
   const maxDept = dashboardStats.deptTotals[0]?.[1] || 1;
   const maxCategory = dashboardStats.categoryTotals[0]?.[1] || 1;
@@ -1152,44 +1153,41 @@ function Dashboard({
         </>
       )}
 
-      {activeTab === "companies" && (
-        <Panel
-          title="Company Analysis"
-          subtitle="Company-level totals with detailed request breakdown"
-        >
-          <CompanyDetails rows={dashboardStats.companyRows} />
-        </Panel>
-      )}
+   {activeTab === "companies" && (
+  <Panel
+    title="Company Analysis"
+    subtitle="Company-level totals with detailed request breakdown"
+  >
+    <GroupDetails rows={dashboardStats.companyRows} groupLabel="Company" />
+  </Panel>
+)}
 
-      {activeTab === "banks" && (
-        <Panel
-          title="Bank Analysis"
-          subtitle="Pending amount means finance-approved and awaiting bank release"
-        >
-          <AnalysisTable rows={dashboardStats.bankRows} titleName="Bank" />
-        </Panel>
-      )}
+ {activeTab === "banks" && (
+  <Panel
+    title="Bank Analysis"
+    subtitle="Bank-level totals with detailed request breakdown"
+  >
+    <GroupDetails rows={dashboardStats.bankRows} groupLabel="Bank" />
+  </Panel>
+)}
 
-      {activeTab === "departments" && (
-        <Panel
-          title="Department Analysis"
-          subtitle="Pending amount means finance-approved and awaiting bank release"
-        >
-          <AnalysisTable
-            rows={dashboardStats.departmentRows}
-            titleName="Department"
-          />
-        </Panel>
-      )}
+{activeTab === "departments" && (
+  <Panel
+    title="Department Analysis"
+    subtitle="Department-level totals with detailed request breakdown"
+  >
+    <GroupDetails rows={dashboardStats.departmentRows} groupLabel="Department" />
+  </Panel>
+)}
 
-      {activeTab === "explorer" && (
-        <Panel
-          title="Request Explorer"
-          subtitle="Search, filter, review, and export one-time payment requests"
-        >
-          <Empty text="Request explorer will be added next" />
-        </Panel>
-      )}
+{activeTab === "explorer" && (
+  <Panel
+    title="Request Explorer"
+    subtitle="All one-time payment requests with payment details"
+  >
+    <RequestDetailsTable items={onetime} />
+  </Panel>
+)}
     </div>
   );
 }

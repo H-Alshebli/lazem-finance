@@ -25,6 +25,7 @@ export const CATEGORIES_RECURRING = [
 export const CATEGORIES_ONETIME = [
   "Medical",
   "Equipment",
+  "Devices",
   "Events",
   "Legal",
   "Training",
