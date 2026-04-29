@@ -152,7 +152,7 @@ export const ROLE_CONFIG = {
     ],
     canSubmit: true,
     canPay: true,
-    canViewAll: true,
+    canViewAll: false,
   },
   executive: {
     label: "Executive",
