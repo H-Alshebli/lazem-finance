@@ -731,31 +731,75 @@ function Dashboard({
     </div>
   );
 
-  const RequestDetailsTable = ({ items }) => (
-    <div style={{ overflowX: "auto", marginTop: 12 }}>
-      <table
-        style={{
-          width: "100%",
-          borderCollapse: "collapse",
-          fontSize: 12,
-        }}
-      >
-        <thead>
-          <tr style={{ color: C.muted, textAlign: "left" }}>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Request</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Department</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Category</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Bank</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Method</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Amount</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Status</th>
-            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>Date</th>
-          </tr>
-        </thead>
+const RequestDetailsTable = ({ items, showCompany = true }) => (
+  <div style={{ overflowX: "auto", marginTop: 12 }}>
+    <table
+      style={{
+        width: "100%",
+        borderCollapse: "collapse",
+        fontSize: 12,
+      }}
+    >
+      <thead>
+        <tr style={{ color: C.muted, textAlign: "left" }}>
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Request
+          </th>
 
-        <tbody>
-          {items.map((r) => (
-            <tr key={r.id}>
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Department
+          </th>
+
+          {showCompany && (
+            <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              Company
+            </th>
+          )}
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Category
+          </th>
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Bank
+          </th>
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Method
+          </th>
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Amount
+          </th>
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Status
+          </th>
+
+          <th style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+            Date
+          </th>
+        </tr>
+      </thead>
+
+      <tbody>
+        {items.map((r) => (
+          <tr key={r.id}>
+            <td
+              style={{
+                padding: "10px 8px",
+                borderBottom: `1px solid ${C.border}`,
+                fontWeight: 700,
+              }}
+            >
+              {r.title || r.category || "Untitled"}
+            </td>
+
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {r.department || "-"}
+            </td>
+
+            {showCompany && (
               <td
                 style={{
                   padding: "10px 8px",
@@ -763,50 +807,47 @@ function Dashboard({
                   fontWeight: 700,
                 }}
               >
-                {r.title || r.category || "Untitled"}
+                {getCompanyName(r)}
               </td>
+            )}
 
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {r.department || "-"}
-              </td>
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {r.category || "-"}
+            </td>
 
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {r.category || "-"}
-              </td>
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {getBankName(r)}
+            </td>
 
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {getBankName(r)}
-              </td>
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {getPaymentMethod(r)}
+            </td>
 
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {getPaymentMethod(r)}
-              </td>
+            <td
+              style={{
+                padding: "10px 8px",
+                borderBottom: `1px solid ${C.border}`,
+                color: C.accent,
+                fontFamily: "monospace",
+                fontWeight: 800,
+              }}
+            >
+              {r.currency || "SAR"} {fmtAmt(Math.round(money(r.amount)))}
+            </td>
 
-              <td
-                style={{
-                  padding: "10px 8px",
-                  borderBottom: `1px solid ${C.border}`,
-                  color: C.accent,
-                  fontFamily: "monospace",
-                  fontWeight: 800,
-                }}
-              >
-                {r.currency || "SAR"} {fmtAmt(Math.round(money(r.amount)))}
-              </td>
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {getStatusLabel(r.status)}
+            </td>
 
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {getStatusLabel(r.status)}
-              </td>
-
-              <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
-                {fmtDate(getScheduleDate(r))}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+            <td style={{ padding: "10px 8px", borderBottom: `1px solid ${C.border}` }}>
+              {fmtDate(getScheduleDate(r))}
+            </td>
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  </div>
+);
 
 const GroupDetails = ({ rows, groupLabel = "Group" }) => (
   <div style={{ display: "grid", gap: 16 }}>
@@ -897,7 +938,10 @@ const GroupDetails = ({ rows, groupLabel = "Group" }) => (
             />
           </div>
 
-          <RequestDetailsTable items={group.items || []} />
+        <RequestDetailsTable
+  items={group.items || []}
+  showCompany={groupLabel !== "Company"}
+/>
         </div>
       ))
     )}
@@ -1185,7 +1229,7 @@ const GroupDetails = ({ rows, groupLabel = "Group" }) => (
     title="Request Explorer"
     subtitle="All one-time payment requests with payment details"
   >
-    <RequestDetailsTable items={onetime} />
+    <RequestDetailsTable items={onetime} showCompany={true} />
   </Panel>
 )}
     </div>
