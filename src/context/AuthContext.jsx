@@ -10,6 +10,8 @@ import {
   getUserProfile,
   setUserProfile,
   listenUserProfile,
+  addItem,
+  COL,
 } from "../firebase/firestore";
 
 const AuthContext = createContext(null);
@@ -19,16 +21,35 @@ export function AuthProvider({ children }) {
   const [userProfile, setUserProfile_] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  // Register new user → create Firebase Auth account + Firestore profile
+  // Register new user -> create Firebase Auth account + Firestore profile
   const register = async (email, password, name) => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
+    const normalizedEmail = email.toLowerCase();
+    const createdAt = new Date().toISOString();
 
     await setUserProfile(cred.user.uid, {
       name,
-      email: email.toLowerCase(),
+      email: normalizedEmail,
       role: "staff",
       avatar: name?.[0]?.toUpperCase() || "U",
-      createdAt: new Date().toISOString(),
+      createdAt,
+    });
+
+    // Notify Admin when a new account is created.
+    // The notification appears in the system Notifications page.
+    await addItem(COL.notifications, {
+      type: "new_account",
+      title: "New user account created",
+      body: `${name || "New user"} (${normalizedEmail}) created a new account and is waiting for review / role assignment.`,
+      read: false,
+      userId: cred.user.uid,
+      userName: name || "New user",
+      userEmail: normalizedEmail,
+      userRole: "staff",
+      targetRoles: ["admin"],
+      createdBy: cred.user.uid,
+      eventAt: createdAt,
+      timestamp: createdAt,
     });
 
     return cred;
