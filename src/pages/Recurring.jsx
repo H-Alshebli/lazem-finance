@@ -77,7 +77,6 @@ function buildFingerprint(item) {
     String(item.title || "").trim().toLowerCase(),
     String(item.department || "").trim().toLowerCase(),
     String(item.category || "").trim().toLowerCase(),
-    String(item.companyName || "").trim().toLowerCase(),
   ].join("|");
 }
 
@@ -179,9 +178,6 @@ function buildMasterRecord(raw, existing) {
     endDate: toYMD(raw.endDate || ""),
     dueDay,
     priority: raw.priority || "medium",
-paymentMethod: raw.paymentMethod || "",
-companyName: raw.companyName || "",
-bankName: raw.bankName || "",
     notes: raw.notes || "",
     invoices: Array.isArray(raw.invoices) ? raw.invoices : [],
     isActive: raw.isActive ?? true,
@@ -262,9 +258,6 @@ function parseExcelToRecurring(file, onDone, onError) {
             currency,
             category,
             priority,
-paymentMethod: "",
-companyName: "",
-bankName: "",
             startDate: renewalDate,
             renewalDate,
             endDate: toYMD(get("End Date")),
@@ -296,9 +289,6 @@ function downloadRecurringTemplate() {
     "Billing Cycle",
     "Number of Users / Licenses",
     "Total Cost",
-    "Payment Method",
-    "Company",
-    "Bank",
     "Start Date",
     "End Date",
     "Due Day",
@@ -316,9 +306,6 @@ function downloadRecurringTemplate() {
       "Monthly",
       1,
       100,
-      "Bank Transfer",
-      "Lazem Medical Services",
-      "Al Rajhi Bank - Lazem Medical",
       "2026-05-27",
       "",
       27,
@@ -334,9 +321,6 @@ function downloadRecurringTemplate() {
       "Monthly",
       1,
       80,
-      "Credit Card",
-      "Lazem Medical Services",
-      "Al Rajhi Bank - Lazem Medical",
       "2026-05-15",
       "",
       15,
@@ -352,9 +336,6 @@ function downloadRecurringTemplate() {
       "Yearly",
       1,
       120,
-      "Bank Transfer",
-      "Lazem Holding",
-      "ALbilad Bank - Lazem Holding",
       "2026-09-01",
       "",
       1,
@@ -364,7 +345,7 @@ function downloadRecurringTemplate() {
   ];
 
   const ws = XLSX.utils.aoa_to_sheet([headers, ...sample]);
-  ws["!cols"] = headers.map(() => ({ wch: 22 }));
+  ws["!cols"] = headers.map(() => ({ wch: 24 }));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, ws, "Recurring Payments");
   XLSX.writeFile(wb, "recurring_payments_template.xlsx");
@@ -427,6 +408,8 @@ const [form, setForm] = useState({
   invoices: [],
 });
 
+  const canFinanceAction = userRole === "finance" || userRole === "admin";
+
   const preparedRecurring = useMemo(
     () => recurring.map((r) => buildMasterRecord(r, r)),
     [recurring]
@@ -474,8 +457,6 @@ const [form, setForm] = useState({
           r.department,
           r.purpose,
           r.notes,
-          r.companyName,
-          r.bankName,
         ]
           .join(" ")
           .toLowerCase()
@@ -563,9 +544,6 @@ const newMaster = buildMasterRecord({
   licenses: Number(form.licenses || 1),
   masterStatus: "active_recurring",
   isActive: true,
-  paymentMethod: "",
-  companyName: "",
-  bankName: "",
   history: [
     {
       by: username || "User",
@@ -743,12 +721,12 @@ setForm({
       title: "",
     });
 setBankForm({
-  method: "Bank Transfer",
-  companyName: COMPANY_OPTIONS?.[0] || "",
-  bankName: BANK_OPTIONS?.[0] || "",
-  ref: "",
-  date: today(),
-  note: "",
+  method: occ.bankRelease?.method || "Bank Transfer",
+  companyName: occ.bankRelease?.companyName || COMPANY_OPTIONS?.[0] || "",
+  bankName: occ.bankRelease?.bankName || BANK_OPTIONS?.[0] || "",
+  ref: occ.bankRelease?.ref || "",
+  date: occ.bankRelease?.date || today(),
+  note: occ.bankRelease?.note || "",
 });
   };
 
@@ -763,21 +741,21 @@ setBankForm({
       (occ) => ({
         ...occ,
         status: "pending_receipt",
-bankRelease: {
-  method: bankForm.method,
-  companyName: bankForm.companyName,
-  bankName: bankForm.bankName,
-  ref: bankForm.ref,
-  date: bankForm.date,
-  note: bankForm.note,
-  by: username || "Finance",
-},
+        bankRelease: {
+          method: bankForm.method,
+          companyName: bankForm.companyName,
+          bankName: bankForm.bankName,
+          ref: bankForm.ref,
+          date: bankForm.date,
+          note: bankForm.note,
+          by: username || "Finance",
+        },
         history: [
           ...(occ.history || []),
           {
             by: username || "Finance",
             date: today(),
-            note: `Released for payment · Ref ${bankForm.ref}`,
+            note: `Released for payment · ${bankForm.method} · ${bankForm.companyName} · ${bankForm.bankName} · Ref ${bankForm.ref}`,
           },
         ],
       })
@@ -1374,9 +1352,13 @@ bankRelease: {
                                             fontSize: 11,
                                             color: C.green,
                                             marginBottom: 4,
+                                            lineHeight: 1.6,
                                           }}
                                         >
-                                          ✓ Released: Ref {occ.bankRelease.ref}
+                                          ✓ Released: {occ.bankRelease.method || "Payment"}
+                                          {occ.bankRelease.ref ? ` · Ref ${occ.bankRelease.ref}` : ""}
+                                          {occ.bankRelease.companyName ? ` · ${occ.bankRelease.companyName}` : ""}
+                                          {occ.bankRelease.bankName ? ` · ${occ.bankRelease.bankName}` : ""}
                                         </div>
                                       )}
 
@@ -1413,7 +1395,7 @@ bankRelease: {
                                         minWidth: 190,
                                       }}
                                     >
-                                      {["upcoming", "overdue", "pending_bank_release"].includes(
+                                      {canFinanceAction && ["upcoming", "overdue", "pending_bank_release"].includes(
                                         occStatus
                                       ) && (
                                         <>
@@ -1433,7 +1415,7 @@ bankRelease: {
                                         </>
                                       )}
 
-                                      {occStatus === "pending_receipt" && (
+                                      {canFinanceAction && occStatus === "pending_receipt" && (
                                         <button
                                           className="btn-green"
                                           onClick={() => openReceipt(master.id, occ)}
@@ -1442,7 +1424,7 @@ bankRelease: {
                                         </button>
                                       )}
 
-                                      {occStatus === "pending_invoice" && (
+                                      {canFinanceAction && occStatus === "pending_invoice" && (
                                         <>
                                           <button
                                             className="btn-primary"
@@ -1647,6 +1629,7 @@ bankRelease: {
                   <input
                     className="inp"
                     type="date"
+                    lang="en-GB"
                     value={form.startDate}
                     onChange={(e) => setForm({ ...form, startDate: e.target.value })}
                   />
@@ -1676,6 +1659,7 @@ bankRelease: {
                   <input
                     className="inp"
                     type="date"
+                    lang="en-GB"
                     value={form.endDate}
                     onChange={(e) => setForm({ ...form, endDate: e.target.value })}
                   />
@@ -1960,6 +1944,7 @@ bankRelease: {
               <input
                 className="inp"
                 type="date"
+                lang="en-GB"
                 value={rescheduleModal.date}
                 onChange={(e) =>
                   setRescheduleModal((p) => ({ ...p, date: e.target.value }))
@@ -2046,6 +2031,7 @@ bankRelease: {
   <input
     className="inp"
     type="date"
+    lang="en-GB"
     value={bankForm.date}
     onChange={(e) => setBankForm({ ...bankForm, date: e.target.value })}
   />

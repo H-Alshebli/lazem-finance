@@ -110,7 +110,7 @@ function ApprovalCard({ r, steps, canApprove, onApprove, btnLabel, next, onRejec
               <div style={{ fontSize:10, color:C.green, letterSpacing:1, marginBottom:6, fontWeight:700 }}>PAYMENT RECORDED</div>
               <div style={{ display:"flex", gap:16, fontSize:12, flexWrap:"wrap" }}>
                 <span>💳 {r.paymentInfo.method}</span>
-                <span>Ref: <strong>{r.paymentInfo.ref}</strong></span>
+                {r.paymentInfo.ref && <span>Ref: <strong>{r.paymentInfo.ref}</strong></span>}
                 <span>Date: {fmtDate(r.paymentInfo.date)}</span>
                 {r.paymentInfo.doc && <span>📎 {r.paymentInfo.doc}</span>}
               </div>

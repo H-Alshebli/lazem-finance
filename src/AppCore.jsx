@@ -685,7 +685,8 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   const getDefaultView = (role) => {
     const pages = DEFAULT_PERMISSIONS[role]?.pages || ROLE_CONFIG[role]?.pages || [];
     if (pages.includes("dashboard")) return "dashboard";
-    return pages[0] || "recurring";
+    if (pages.includes("onetime")) return "onetime";
+    return pages[0] || "onetime";
   };
 
   const userRole = currentUser.role;
@@ -821,7 +822,26 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   }, [onetime, setOnetime, addNotification, logAudit]);
 
   const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
-  const activePages = permissions?.[userRole]?.pages || role.pages || [];
+  const configuredPages = permissions?.[userRole]?.pages || role.pages || [];
+
+  const firstLaunchPages =
+    userRole === "admin"
+      ? role.pages
+      : userRole === "finance" || userRole === "ceo"
+      ? ["dashboard", "onetime", "approvals", "approvals_onetime"]
+      : userRole === "manager"
+      ? ["onetime", "approvals", "approvals_onetime"]
+      : ["onetime"];
+
+  const activePages = configuredPages.filter((page) =>
+    firstLaunchPages.includes(page)
+  );
+
+  useEffect(() => {
+    if (!activePages.includes(view)) {
+      setView(getDefaultView(userRole));
+    }
+  }, [view, userRole, activePages.join("|")]);
 
   const overdueCount =
     (recurring || []).filter(
@@ -833,11 +853,10 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
         due &&
         daysUntil(due) < 0 &&
         ![
-          "paid_onetime",
+          "closed_paid",
           "rejected",
-          "pending_bank",
-          "pending_receipt",
-          "pending_invoice",
+          "pending_invoice_upload",
+          "pending_invoice_review",
         ].includes(o.status)
       );
     }).length;
@@ -884,7 +903,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     if (userRole === "ceo") {
       return (
         (onetime || []).filter((o) =>
-          ["pending_ceo_1", "pending_schedule_ceo"].includes(o.status)
+          ["pending_ceo"].includes(o.status)
         ).length +
         (entitlements || []).filter((e) =>
           ["pending_ceo_1", "pending_ceo_2"].includes(e.status)
@@ -900,10 +919,12 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
         (onetime || []).filter((o) =>
           [
             "pending_finance",
-            "pending_schedule_finance",
-            "pending_bank",
-            "pending_receipt",
-            "pending_invoice",
+            "pending_schedule_preparation",
+            "pending_schedule_verified",
+            "pending_release_initiation",
+            "pending_release_verify",
+            "pending_pay",
+            "pending_invoice_review",
           ].includes(o.status)
         ).length +
         (entitlements || []).filter((e) =>

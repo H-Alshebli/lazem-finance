@@ -106,15 +106,16 @@ function OnetimeView({
   const statusTabs = [
     ["all", "All"],
     ["pending_manager", "Pending Manager"],
-    ["pending_ceo_1", "CEO Approval"],
+    ["pending_ceo", "CEO Approval"],
     ["pending_finance", "Finance Approval"],
     ["pending_schedule_preparation", "Schedule Preparation"],
-    ["pending_schedule_review", "Schedule Review"],
-    ["pending_schedule_final_approval", "Final Schedule Approval"],
-    ["pending_bank_release", "Bank Release"],
-    ["pending_receipt", "Upload Receipt"],
-    ["pending_invoice", "Upload Invoice"],
-    ["paid_onetime", "Paid"],
+    ["pending_schedule_verified", "Schedule Verified"],
+    ["pending_release_initiation", "Release Initiation"],
+    ["pending_release_verify", "Release Verification"],
+    ["pending_pay", "Pending Pay"],
+    ["pending_invoice_upload", "Invoice Upload"],
+    ["pending_invoice_review", "Invoice Review"],
+    ["closed_paid", "Closed"],
     ["rejected", "Rejected"],
   ];
 
@@ -337,7 +338,7 @@ function OnetimeView({
 
     return (
       isMyReq &&
-      ["pending_manager", "pending_ceo_1", "pending_finance"].includes(r.status)
+      ["pending_manager", "pending_ceo", "pending_finance"].includes(r.status)
     );
   };
 
@@ -425,6 +426,7 @@ function OnetimeView({
         o.id === invoiceModal
           ? {
               ...o,
+              status: "pending_invoice_review",
               purchaseInvoices: invoiceFiles.map((f) => ({
                 id: f.id || uid(),
                 name: f.name || "",
@@ -437,12 +439,12 @@ function OnetimeView({
               history: [
                 ...(o.history || []),
                 {
-                  status: "pending_invoice",
+                  status: "pending_invoice_review",
                   by: username,
                   date: today(),
                   note: `Purchase invoice uploaded (${invoiceFiles.length} file${
                     invoiceFiles.length !== 1 ? "s" : ""
-                  }) — Finance will close`,
+                  }) — Finance will review and close`,
                 },
               ],
             }
@@ -550,7 +552,7 @@ function OnetimeView({
           const isOverdue =
             displayRequestedDate &&
             daysUntil(displayRequestedDate) < 0 &&
-            !["paid_onetime", "rejected"].includes(r.status);
+            !["closed_paid", "rejected"].includes(r.status);
 
           const expanded = expandedId === r.id;
           const isMyReq =
@@ -560,10 +562,10 @@ function OnetimeView({
 
           const inPayment = [
             "pending_schedule_preparation",
-            "pending_schedule_review",
-            "pending_schedule_final_approval",
-            "pending_bank_release",
-            "pending_receipt",
+            "pending_schedule_verified",
+            "pending_release_initiation",
+            "pending_release_verify",
+            "pending_pay",
           ].includes(r.status);
 
           const hasUploadedPurchaseInvoice =
@@ -571,7 +573,7 @@ function OnetimeView({
 
           const showPurchaseInvoiceUpload =
             isMyReq &&
-            r.status === "pending_invoice" &&
+            r.status === "pending_invoice_upload" &&
             !hasUploadedPurchaseInvoice;
 
           const requestedFor = r.department || "-";
@@ -714,20 +716,21 @@ function OnetimeView({
                       </span>
                     )}
 
-                    {r.financeSchedule?.reviewedAt && (
-                      <span style={{ color: C.green }}>✓ Schedule reviewed</span>
+                    {r.financeSchedule?.verifiedAt && (
+                      <span style={{ color: C.green }}>✓ Schedule verified</span>
                     )}
 
-                    {r.ceoScheduleApproval && (
-                      <span style={{ color: C.green }}>
-                        ✓ Final schedule approved
-                        {r.ceoScheduleApproval.autoApproved ? " (Auto)" : ""}
-                      </span>
+                    {r.releaseInitiation && (
+                      <span style={{ color: C.green }}>✓ Release initiated</span>
+                    )}
+
+                    {r.releaseVerification && (
+                      <span style={{ color: C.green }}>✓ Release verified</span>
                     )}
 
                     {r.bankRelease && (
                       <span style={{ color: C.green }}>
-                        ✓ Released: Ref {r.bankRelease.ref}
+                        ✓ Paid + receipt uploaded
                       </span>
                     )}
 
@@ -959,7 +962,7 @@ function OnetimeView({
                     </div>
                   )}
 
-                  {isMyReq && r.status === "pending_invoice" && hasUploadedPurchaseInvoice && (
+                  {isMyReq && r.status === "pending_invoice_review" && hasUploadedPurchaseInvoice && (
                     <div
                       style={{
                         padding: "10px 14px",
@@ -975,7 +978,7 @@ function OnetimeView({
                     </div>
                   )}
 
-                  {r.status === "paid_onetime" && r.paymentInfo && (
+                  {r.status === "closed_paid" && r.paymentInfo && (
                     <div
                       style={{
                         fontSize: 11,
@@ -987,7 +990,7 @@ function OnetimeView({
                         marginBottom: 8,
                       }}
                     >
-                      ✅ Paid {fmtDate(r.paymentInfo.date)} · Ref: {r.paymentInfo.ref}
+                      ✅ Closed/Paid {fmtDate(r.paymentInfo.date)}
                     </div>
                   )}
 
@@ -1075,7 +1078,7 @@ function OnetimeView({
                     )}
 
                     {(isMyReq || isFinance || isAdmin) &&
-                      !["paid_onetime", "rejected"].includes(r.status) && (
+                      !["closed_paid", "rejected"].includes(r.status) && (
                         <button
                           onClick={() =>
                             setReschedModal({
@@ -1243,6 +1246,7 @@ function OnetimeView({
                 <input
                   className="inp"
                   type="date"
+                  lang="en-GB"
                   value={form.dueDate}
                   onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                 />
@@ -1408,6 +1412,7 @@ function OnetimeView({
                 <input
                   className="inp"
                   type="date"
+                  lang="en-GB"
                   value={editForm.dueDate}
                   onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
                 />
@@ -1490,6 +1495,7 @@ function OnetimeView({
             <input
               className="inp"
               type="date"
+              lang="en-GB"
               value={reschedModal.date}
               onChange={(e) => setReschedModal({ ...reschedModal, date: e.target.value })}
             />

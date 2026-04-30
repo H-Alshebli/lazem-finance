@@ -55,7 +55,10 @@ export default function ApprovalsSelector({
   recurring,
   entitlements,
   setView,
+  userRole,
 }) {
+  const isAdmin = userRole === "admin";
+
   const oneTimeCount = (onetime || []).filter((i) =>
     String(i.status || "").startsWith("pending")
   ).length;
@@ -85,7 +88,9 @@ export default function ApprovalsSelector({
         <div style={{ fontSize: 26, fontWeight: 700 }}>Approvals</div>
 
         <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
-          Select the approval flow you want to manage.
+          {isAdmin
+            ? "Select the approval flow you want to manage."
+            : "First launch is limited to One-Time approvals only."}
         </div>
       </div>
 
@@ -98,21 +103,25 @@ export default function ApprovalsSelector({
           onClick={() => setView("approvals_onetime")}
         />
 
-        <Card
-          title="Recurring Approvals"
-          desc="Manager → CEO → Finance → CEO Release → Pay"
-          color={C.accent}
-          count={recurringCount}
-          onClick={() => setView("approvals_recurring")}
-        />
+        {isAdmin && (
+          <>
+            <Card
+              title="Recurring Approvals"
+              desc="Manager → CEO → Finance → CEO Release → Pay"
+              color={C.accent}
+              count={recurringCount}
+              onClick={() => setView("approvals_recurring")}
+            />
 
-        <Card
-          title="Entitlements Approvals"
-          desc="Manager → VP → HR → CEO → Finance → CEO Release → Pay"
-          color="#14B8A6"
-          count={entitlementsCount}
-          onClick={() => setView("approvals_entitlements")}
-        />
+            <Card
+              title="Entitlements Approvals"
+              desc="Manager → VP → HR → CEO → Finance → CEO Release → Pay"
+              color="#14B8A6"
+              count={entitlementsCount}
+              onClick={() => setView("approvals_entitlements")}
+            />
+          </>
+        )}
       </div>
     </div>
   );

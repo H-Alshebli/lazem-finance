@@ -11,7 +11,7 @@ function AnalyticsView({ recurring, onetime, entitlements }) {
 
   const allItems = [
     ...recurring.map(r => ({ ...r, type: "recurring" })),
-    ...onetime.filter(o => ["paid_onetime"].includes(o.status)).map(o => ({ ...o, type: "onetime" })),
+    ...onetime.filter(o => ["closed_paid"].includes(o.status)).map(o => ({ ...o, type: "onetime" })),
     ...entitlements.filter(e => ["paid_onetime"].includes(e.status)).map(e => ({ ...e, type: "entitlement" })),
   ];
 

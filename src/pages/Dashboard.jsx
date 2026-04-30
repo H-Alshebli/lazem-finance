@@ -30,7 +30,7 @@ function Dashboard({
 
     return d.toLocaleDateString("en-GB", {
       day: "2-digit",
-      month: "short",
+      month: "2-digit",
       year: "numeric",
     });
   };
@@ -106,15 +106,16 @@ function Dashboard({
   const getStatusLabel = (status) => {
     const labels = {
       pending_manager: "Manager Approval",
-      pending_ceo_1: "CEO Approval",
+      pending_ceo: "CEO Approval",
       pending_finance: "Finance Approval",
       pending_schedule_preparation: "Schedule Preparation",
-      pending_schedule_review: "Schedule Review",
-      pending_schedule_final_approval: "Final Schedule Approval",
-      pending_bank_release: "Bank Release",
-      pending_receipt: "Receipt Upload",
-      pending_invoice: "Employee Invoice",
-      paid_onetime: "Paid",
+      pending_schedule_verified: "Schedule Verified",
+      pending_release_initiation: "Release Initiation",
+      pending_release_verify: "Release Verification",
+      pending_pay: "Pending Pay",
+      pending_invoice_upload: "Invoice Upload",
+      pending_invoice_review: "Invoice Review",
+      closed_paid: "Closed / Paid",
       rejected: "Rejected",
     };
 
@@ -151,18 +152,21 @@ function Dashboard({
     return (
       [
         "pending_schedule_preparation",
-        "pending_schedule_review",
-        "pending_schedule_final_approval",
-        "pending_bank_release",
+        "pending_schedule_verified",
+        "pending_release_initiation",
+        "pending_release_verify",
+        "pending_pay",
         "schedule_preparation",
-        "schedule_review",
-        "schedule_final_approval",
-        "bank_release",
+        "schedule_verified",
+        "release_initiation",
+        "release_verify",
+        "pending_pay",
       ].includes(status) ||
       value.includes("schedule_preparation") ||
-      value.includes("schedule_review") ||
-      value.includes("schedule_final_approval") ||
-      value.includes("bank_release")
+      value.includes("schedule_verified") ||
+      value.includes("release_initiation") ||
+      value.includes("release_verify") ||
+      value.includes("pending_pay")
     );
   };
 
@@ -171,8 +175,9 @@ function Dashboard({
     const value = getFlowText(r);
 
     return (
-      status.includes("pending_receipt") ||
-      status.includes("pending_invoice") ||
+      status.includes("pending_invoice_upload") ||
+      status.includes("pending_invoice_review") ||
+      status.includes("closed_paid") ||
       status.includes("paid") ||
       status.includes("rejected") ||
       value.includes("receipt") ||
@@ -201,14 +206,15 @@ function Dashboard({
 
   const activeStatuses = [
     "pending_manager",
-    "pending_ceo_1",
+    "pending_ceo",
     "pending_finance",
     "pending_schedule_preparation",
-    "pending_schedule_review",
-    "pending_schedule_final_approval",
-    "pending_bank_release",
-    "pending_receipt",
-    "pending_invoice",
+    "pending_schedule_verified",
+    "pending_release_initiation",
+    "pending_release_verify",
+    "pending_pay",
+    "pending_invoice_upload",
+    "pending_invoice_review",
   ];
 
   const tabs = [
@@ -222,7 +228,7 @@ function Dashboard({
   const dashboardStats = useMemo(() => {
     const totalRequests = onetime.length;
 
-    const paidRequests = onetime.filter((r) => r.status === "paid_onetime");
+    const paidRequests = onetime.filter((r) => r.status === "closed_paid");
     const rejectedRequests = onetime.filter((r) => r.status === "rejected");
     const activeRequests = onetime.filter((r) =>
       activeStatuses.includes(r.status)
@@ -267,14 +273,14 @@ function Dashboard({
 
     const missingReceipt = onetime.filter(
       (r) =>
-        ["pending_receipt", "pending_invoice", "paid_onetime"].includes(
+        ["pending_invoice_upload", "pending_invoice_review", "closed_paid"].includes(
           r.status
         ) && !r.receiptUploaded
     ).length;
 
     const missingPurchaseInvoice = onetime.filter(
       (r) =>
-        ["pending_invoice", "paid_onetime"].includes(r.status) &&
+        ["pending_invoice_upload", "pending_invoice_review", "closed_paid"].includes(r.status) &&
         (!Array.isArray(r.purchaseInvoices) ||
           r.purchaseInvoices.length === 0)
     ).length;
@@ -313,7 +319,7 @@ function Dashboard({
       map[key].totalAmount += money(r.amount);
       map[key].items.push(r);
 
-      if (r.status === "paid_onetime") {
+      if (r.status === "closed_paid") {
         map[key].paidAmount += money(r.amount);
         map[key].paidCount += 1;
       } else if (r.status === "rejected") {
