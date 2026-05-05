@@ -20,6 +20,8 @@ function ApprovalsOneTimeView({
   addNotif,
   deptConfig,
   currentUser,
+  permissions,
+  effectivePermissions,
 }) {
   const [rejectModal, setRejectModal] = useState(null);
   const [rejectReason, setRejectReason] = useState("");
@@ -53,27 +55,91 @@ function ApprovalsOneTimeView({
 
   const [receiptFiles, setReceiptFiles] = useState([]);
 
-  const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
-  const canSeeAll = role.canViewAll;
+  const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
+  const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
+  const canSeeAll = !!role.canViewAll;
   const isAdmin = userRole === "admin";
-  const canManager = userRole === "manager" || isAdmin;
-  const canCEO = userRole === "ceo" || isAdmin;
-  const canFinance = userRole === "finance" || isAdmin;
-
-  const myManagedDepts = (deptConfig || [])
-    .filter(
-      (d) =>
-        d.manager === currentUser?.id ||
-        d.manager === currentUser?.email ||
-        d.manager === currentUser?.uid
-    )
-    .map((d) => d.id);
+  const canManager = !!role.canApproveL1 || userRole === "manager" || isAdmin;
+  const canCEO = !!role.canApproveCEO || userRole === "ceo" || isAdmin;
+  const canFinance = !!role.canApproveFinance || userRole === "finance" || isAdmin;
 
   const getApprovalDepartment = (item) =>
     item.approvalDepartment || item.department || "";
 
-  const deptFilter = (item) => isAdmin || canSeeAll || myManagedDepts.includes(getApprovalDepartment(item));
-  const filterMgr = (items) => (canManager ? items.filter(deptFilter) : []);
+  const getDepartmentConfig = (item) =>
+    (deptConfig || []).find(
+      (d) => d.id === getApprovalDepartment(item) || d.name === getApprovalDepartment(item)
+    ) || null;
+
+  const normalizeFinanceApprovers = (value) => {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (value) return [value];
+    return [];
+  };
+
+  const normalizeManagerApprovers = (department) => {
+    const levels = Array.isArray(department?.managerApprovers)
+      ? department.managerApprovers
+      : [];
+
+    const normalizedLevels = levels
+      .map((level, index) => {
+        const userId = typeof level === "string" ? level : level?.userId || level?.id || "";
+        if (!userId) return null;
+        return {
+          level: index + 1,
+          userId,
+          userName: level?.userName || "",
+          userEmail: level?.userEmail || "",
+        };
+      })
+      .filter(Boolean);
+
+    if (normalizedLevels.length > 0) return normalizedLevels;
+
+    if (department?.manager) {
+      return [{ level: 1, userId: department.manager, userName: "", userEmail: "" }];
+    }
+
+    return [];
+  };
+
+  const userMatches = (value) =>
+    value === currentUser?.id || value === currentUser?.email || value === currentUser?.uid;
+
+  const getCurrentManagerIndex = (item) => Math.max(Number(item?.currentManagerLevel || 1) - 1, 0);
+
+  const getCurrentManagerLevel = (item) => {
+    const levels = normalizeManagerApprovers(getDepartmentConfig(item));
+    return levels[getCurrentManagerIndex(item)] || levels[0] || null;
+  };
+
+  const canCurrentManagerApprove = (item) => {
+    if (isAdmin) return true;
+    const level = getCurrentManagerLevel(item);
+    return !!level && userMatches(level.userId);
+  };
+
+  const getPendingWithLabel = (item) => {
+    if (item.status === "pending_manager") {
+      const level = getCurrentManagerLevel(item);
+      const levelNumber = getCurrentManagerIndex(item) + 1;
+      const name = level?.userName || level?.userEmail || level?.userId || "Manager";
+      return `Pending Manager Level ${levelNumber} Approval - ${name}`;
+    }
+    if (item.status === "pending_ceo") return "Pending CEO Approval";
+    if (item.status === "pending_finance") return "Pending Finance Approval";
+    return null;
+  };
+
+  const myFinanceDepts = (deptConfig || [])
+    .filter((d) => normalizeFinanceApprovers(d.finance).some(userMatches))
+    .map((d) => d.id);
+
+  const managerDeptFilter = (item) => isAdmin || canCurrentManagerApprove(item);
+  const financeDeptFilter = (item) => isAdmin || myFinanceDepts.includes(getApprovalDepartment(item));
+  const filterMgr = (items) => (canManager ? items.filter(managerDeptFilter) : []);
+  const filterFinance = (items) => (canFinance ? items.filter(financeDeptFilter) : []);
 
   const addHistory = (item, status, note) => ({
     ...item,
@@ -96,31 +162,41 @@ function ApprovalsOneTimeView({
     pending_ceo: canCEO
       ? (onetime || []).filter((o) => o.status === "pending_ceo")
       : [],
-    pending_finance: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_finance")
-      : [],
-    pending_schedule_preparation: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_schedule_preparation")
-      : [],
-    pending_schedule_verified: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_schedule_verified")
-      : [],
-    pending_release_initiation: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_release_initiation")
-      : [],
-    pending_release_verify: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_release_verify")
-      : [],
-    pending_pay: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_pay")
-      : [],
-    pending_invoice_review: canFinance
-      ? (onetime || []).filter((o) => o.status === "pending_invoice_review")
-      : [],
+    pending_finance: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_finance")
+    ),
+    pending_schedule_preparation: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_schedule_preparation")
+    ),
+    pending_schedule_verified: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_schedule_verified")
+    ),
+    pending_release_initiation: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_release_initiation")
+    ),
+    pending_release_verify: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_release_verify")
+    ),
+    pending_pay: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_pay")
+    ),
+    pending_invoice_review: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_invoice_review")
+    ),
   };
 
   const approveManager = (id) => {
     const item = (onetime || []).find((o) => o.id === id);
+    if (!item) return;
+
+    const managerLevels = normalizeManagerApprovers(getDepartmentConfig(item));
+    const currentIndex = getCurrentManagerIndex(item);
+    const currentLevelNumber = currentIndex + 1;
+    const nextLevel = managerLevels[currentIndex + 1];
+    const nextStatus = nextLevel ? "pending_manager" : "pending_ceo";
+    const nextNote = nextLevel
+      ? `Manager Level ${currentLevelNumber} approved → Manager Level ${currentLevelNumber + 1}`
+      : `Manager Level ${currentLevelNumber} approved → CEO`;
 
     setOnetime((p) =>
       p.map((o) =>
@@ -128,22 +204,45 @@ function ApprovalsOneTimeView({
           ? addHistory(
               {
                 ...o,
-                managerApproval: { by: currentUser?.name, date: today() },
+                currentManagerLevel: nextLevel ? currentLevelNumber + 1 : currentLevelNumber,
+                currentApproverId: nextLevel ? nextLevel.userId : "ceo",
+                currentApproverName: nextLevel ? nextLevel.userName || nextLevel.userEmail || "" : "CEO",
+                currentApproverRole: nextLevel ? `Manager Level ${currentLevelNumber + 1}` : "CEO",
+                managerApprovals: [
+                  ...(o.managerApprovals || []),
+                  {
+                    level: currentLevelNumber,
+                    by: currentUser?.name,
+                    byId: currentUser?.id || currentUser?.uid,
+                    date: today(),
+                  },
+                ],
+                managerApproval: { by: currentUser?.name, date: today(), level: currentLevelNumber },
               },
-              "pending_ceo",
-              "Manager approved → CEO"
+              nextStatus,
+              nextNote
             )
           : o
       )
     );
 
-    logAction?.("approve", "one-time", id, item?.title, "Manager → CEO");
-    addNotif?.(
-      "approval_required",
-      "CEO Approval Needed",
-      `"${item?.title}" needs CEO approval`
-    );
-    showNotif("Approved → CEO!");
+    logAction?.("approve", "one-time", id, item?.title, nextNote);
+
+    if (nextLevel) {
+      addNotif?.(
+        "approval_required",
+        `Manager Level ${currentLevelNumber + 1} Approval Needed`,
+        `"${item?.title}" needs approval from ${nextLevel.userName || nextLevel.userEmail || "next manager"}`
+      );
+      showNotif(`Approved → Manager Level ${currentLevelNumber + 1}!`);
+    } else {
+      addNotif?.(
+        "approval_required",
+        "CEO Approval Needed",
+        `"${item?.title}" needs CEO approval`
+      );
+      showNotif("Approved → CEO!");
+    }
   };
 
   const approveCEO = (id) => {
@@ -580,6 +679,9 @@ function ApprovalsOneTimeView({
               <span style={{ fontWeight: 700, fontSize: 14 }}>{r.title}</span>
               <Badge label={sc.label} color={sc.color} />
               <Badge label={pc.label} color={pc.color} />
+              {getPendingWithLabel(r) && (
+                <Badge label={getPendingWithLabel(r)} color={C.orange} />
+              )}
               {r.invoices?.length > 0 && (
                 <Badge label={`📎 ${r.invoices.length} attachment`} color={C.muted} />
               )}
@@ -601,6 +703,12 @@ function ApprovalsOneTimeView({
               <span>Requested For: {requestedFor}</span>
               <span>·</span>
               <span>Approval Flow: {approvalFlow}</span>
+              {getPendingWithLabel(r) && (
+                <>
+                  <span>·</span>
+                  <span style={{ color: C.orange }}>{getPendingWithLabel(r)}</span>
+                </>
+              )}
               <span>·</span>
               <span>{r.category}</span>
               <span>·</span>
@@ -1003,12 +1111,12 @@ function ApprovalsOneTimeView({
 
   const levels = [
     {
-      label: "LEVEL 1 — MANAGER APPROVAL",
+      label: "LEVEL 1 — MANAGER APPROVALS",
       color: C.orange,
       items: queues.pending_manager,
       canApprove: canManager,
       onApprove: approveManager,
-      btnLabel: "✓ Approve → CEO",
+      btnLabel: "✓ Approve → Next Step",
       onRejectFn: rejectOneTime,
     },
     {

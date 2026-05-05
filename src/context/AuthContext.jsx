@@ -22,7 +22,7 @@ export function AuthProvider({ children }) {
   const [loading, setLoading] = useState(true);
 
   // Register new user -> create Firebase Auth account + Firestore profile
-  const register = async (email, password, name) => {
+  const register = async (email, password, name, department = "") => {
     const cred = await createUserWithEmailAndPassword(auth, email, password);
     const normalizedEmail = email.toLowerCase();
     const createdAt = new Date().toISOString();
@@ -31,6 +31,7 @@ export function AuthProvider({ children }) {
       name,
       email: normalizedEmail,
       role: "staff",
+      department,
       avatar: name?.[0]?.toUpperCase() || "U",
       createdAt,
     });
@@ -40,12 +41,13 @@ export function AuthProvider({ children }) {
     await addItem(COL.notifications, {
       type: "new_account",
       title: "New user account created",
-      body: `${name || "New user"} (${normalizedEmail}) created a new account and is waiting for review / role assignment.`,
+      body: `${name || "New user"} (${normalizedEmail}) created a new account${department ? ` for ${department}` : ""} and is waiting for review / role assignment.`,
       read: false,
       userId: cred.user.uid,
       userName: name || "New user",
       userEmail: normalizedEmail,
       userRole: "staff",
+      userDepartment: department,
       targetRoles: ["admin"],
       createdBy: cred.user.uid,
       eventAt: createdAt,

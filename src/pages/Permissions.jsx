@@ -2,7 +2,7 @@ import { useState, useRef, useMemo } from "react";
 import * as XLSX from "xlsx";
 import { C, DEPARTMENTS, CATEGORIES_RECURRING, CATEGORIES_ONETIME, ROLE_CONFIG,
   statusConfig, priorityConfig, GENERAL_STEPS, ENTITLEMENT_STEPS, RECURRING_STEPS,
-  SAR_RATES, DEFAULT_PERMISSIONS, ALL_PAGES } from "../utils/constants";
+  SAR_RATES, DEFAULT_PERMISSIONS, ALL_PAGES, PERM_LABELS } from "../utils/constants";
 import { uid, daysUntil, fmtDate, fmtAmt, today } from "../utils/helpers";
 
 function PermissionsView({ showNotif, permissions, setPermissions, authUsers, setAuthUsers }) {
@@ -25,7 +25,7 @@ function PermissionsView({ showNotif, permissions, setPermissions, authUsers, se
     });
   };
 
-  const saveRole = () => { showNotif(`${ROLE_CONFIG[activeRole].label} permissions saved — nav updated live!`); };
+  const saveRole = () => { showNotif(`${ROLE_CONFIG[activeRole].label} permissions saved — sidebar and page access updated live!`); };
 
   const roles = Object.keys(ROLE_CONFIG);
   const rc = ROLE_CONFIG[activeRole];

@@ -3,6 +3,67 @@ import { C, ROLE_CONFIG, DEPARTMENTS } from "../utils/constants";
 import { setUserProfile } from "../firebase/firestore";
 
 function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
+  const userList = Object.values(authUsers || {});
+
+  const normalizeFinanceApprovers = (value) => {
+    if (Array.isArray(value)) return value.filter(Boolean);
+    if (value) return [value];
+    return [];
+  };
+
+  const normalizeManagerApprovers = (department, options = {}) => {
+    const { keepEmpty = false } = options;
+    const levels = Array.isArray(department?.managerApprovers)
+      ? department.managerApprovers
+      : [];
+
+    const normalizedLevels = levels
+      .map((level, index) => {
+        const userId = typeof level === "string" ? level : level?.userId || level?.id || "";
+        if (!keepEmpty && !userId) return null;
+        const user = findUser(userId);
+        return {
+          level: index + 1,
+          userId,
+          userName: level?.userName || user?.name || "",
+          userEmail: level?.userEmail || user?.email || "",
+        };
+      })
+      .filter(Boolean);
+
+    if (normalizedLevels.length > 0) return normalizedLevels;
+
+    if (department?.manager) {
+      const user = findUser(department.manager);
+      return [
+        {
+          level: 1,
+          userId: department.manager,
+          userName: user?.name || "",
+          userEmail: user?.email || "",
+        },
+      ];
+    }
+
+    return [];
+  };
+
+  const hydrateDepartmentStaff = (departments) => {
+    return departments.map((department) => {
+      const configuredStaff = Array.isArray(department.staff) ? department.staff : [];
+      const usersFromProfile = userList
+        .filter((u) => u.department === department.id)
+        .map((u) => u.id);
+
+      return {
+        ...department,
+        finance: normalizeFinanceApprovers(department.finance),
+        staff: Array.from(new Set([...configuredStaff, ...usersFromProfile])),
+      };
+    });
+  };
+
+
   const buildDefaultDepartments = () =>
     (DEPARTMENTS || [])
       .filter((d) => d !== "All Company")
@@ -10,17 +71,27 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
         id: d,
         name: d,
         manager: "",
+        managerApprovers: [],
         vp: "",
         hr: "",
-        finance: "",
+        finance: [],
         notes: "",
         staff: [],
       }));
 
-  const safeDeptConfig =
-    Array.isArray(deptConfig) && deptConfig.length > 0
-      ? deptConfig
-      : buildDefaultDepartments();
+  const mergeWithDefaultDepartments = (savedDepartments) => {
+    const defaults = buildDefaultDepartments();
+    const saved = Array.isArray(savedDepartments) ? savedDepartments : [];
+
+    return defaults.map((defaultDept) => {
+      const existingDept = saved.find((d) => d.id === defaultDept.id || d.name === defaultDept.name);
+      return existingDept ? { ...defaultDept, ...existingDept } : defaultDept;
+    });
+  };
+
+  const safeDeptConfig = hydrateDepartmentStaff(
+    mergeWithDefaultDepartments(deptConfig)
+  );
 
   const [selected, setSelected] = useState(safeDeptConfig[0]?.id || null);
   const [edited, setEdited] = useState({});
@@ -37,8 +108,6 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
       setSelected(safeDeptConfig[0].id);
     }
   }, [selected, safeDeptConfig]);
-
-  const userList = Object.values(authUsers || {});
 
   const roleUserMap = useMemo(() => {
     return {
@@ -57,7 +126,7 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
   const current = dept ? { ...dept, ...changes } : null;
 
   const findUser = (idOrEmail) =>
-    userList.find((u) => u.id === idOrEmail || u.email === idOrEmail);
+    userList.find((u) => u.id === idOrEmail || u.email === idOrEmail || u.uid === idOrEmail);
 
   const setField = (field, val) => {
     setEdited((prev) => ({
@@ -67,20 +136,18 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
   };
 
   const buildFinalDepartments = () => {
-    const base =
-      Array.isArray(deptConfig) && deptConfig.length > 0
-        ? deptConfig
-        : buildDefaultDepartments();
+    const base = safeDeptConfig.length > 0 ? safeDeptConfig : buildDefaultDepartments();
 
-    return base.map((d) => ({
-      ...d,
-      ...(edited[d.id] || {}),
-      staff: Array.isArray((edited[d.id] || {}).staff)
-        ? (edited[d.id] || {}).staff
-        : Array.isArray(d.staff)
-        ? d.staff
-        : [],
-    }));
+    return base.map((d) => {
+      const merged = { ...d, ...(edited[d.id] || {}) };
+      return {
+        ...merged,
+        managerApprovers: normalizeManagerApprovers(merged),
+        manager: normalizeManagerApprovers(merged)[0]?.userId || "",
+        finance: normalizeFinanceApprovers(merged.finance),
+        staff: Array.isArray(merged.staff) ? merged.staff : [],
+      };
+    });
   };
 
   const syncUserDepartmentsToFirestore = async (finalDepartments) => {
@@ -110,13 +177,13 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
   const save = async () => {
     if (!selected || !current) return;
 
-    if (!current.manager) {
-      showNotif("Manager is required for this department", "error");
+    if (normalizeManagerApprovers(current).length === 0) {
+      showNotif("At least one manager approval level is required for this department", "error");
       return;
     }
 
-    if (!current.finance) {
-      showNotif("Finance approver is required for this department", "error");
+    if (normalizeFinanceApprovers(current.finance).length === 0) {
+      showNotif("At least one finance approver is required for this department", "error");
       return;
     }
 
@@ -152,14 +219,6 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
 
   const ROLES_IN_FLOW = [
     {
-      key: "manager",
-      label: "Manager",
-      icon: "👔",
-      color: "#F97316",
-      desc: "Approves L1 — first reviewer for all requests from this department",
-      users: roleUserMap.manager,
-    },
-    {
       key: "vp",
       label: "VP",
       icon: "⭐",
@@ -187,7 +246,10 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
 
   const completeness = safeDeptConfig.map((d) => {
     const merged = { ...d, ...(edited[d.id] || {}) };
-    const filled = ["manager", "finance"].filter((k) => merged[k]).length;
+    const filled = [
+      normalizeManagerApprovers(merged).length > 0,
+      normalizeFinanceApprovers(merged.finance).length > 0,
+    ].filter(Boolean).length;
     const staffCount = Array.isArray(merged.staff) ? merged.staff.length : 0;
     return { id: d.id, filled, total: 2, staffCount };
   });
@@ -227,6 +289,36 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
       "staff",
       currentStaff.filter((id) => id !== userId)
     );
+  };
+
+  const managerLevels = current ? normalizeManagerApprovers(current, { keepEmpty: true }) : [];
+
+  const setManagerLevelUser = (index, userId) => {
+    if (!current) return;
+    const user = findUser(userId);
+    const next = [...managerLevels];
+    next[index] = {
+      level: index + 1,
+      userId,
+      userName: user?.name || "",
+      userEmail: user?.email || "",
+    };
+    setField("managerApprovers", next);
+  };
+
+  const addManagerLevel = () => {
+    if (!current) return;
+    setField("managerApprovers", [
+      ...managerLevels,
+      { level: managerLevels.length + 1, userId: "", userName: "", userEmail: "" },
+    ]);
+  };
+
+  const removeManagerLevel = (index) => {
+    const next = managerLevels
+      .filter((_, i) => i !== index)
+      .map((level, i) => ({ ...level, level: i + 1 }));
+    setField("managerApprovers", next);
   };
 
   return (
@@ -430,10 +522,141 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                 </button>
               </div>
 
+              <div
+                style={{
+                  padding: "16px 18px",
+                  borderRadius: 12,
+                  border: `1px solid ${managerLevels.length > 0 ? "#F9731644" : C.border}`,
+                  background: managerLevels.length > 0 ? "#F973160C" : C.subtle,
+                  marginBottom: 14,
+                }}
+              >
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", marginBottom: 12 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <span style={{ fontSize: 18 }}>👔</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: managerLevels.length > 0 ? "#F97316" : C.text }}>
+                        Manager Approval Levels
+                      </div>
+                      <div style={{ fontSize: 10, color: C.muted }}>
+                        Add one or more manager levels. The request will move level by level before CEO approval.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={addManagerLevel}
+                    style={{
+                      fontSize: 11,
+                      padding: "7px 10px",
+                      background: "#F9731618",
+                      border: "1px solid #F9731644",
+                      borderRadius: 8,
+                      color: "#F97316",
+                      cursor: "pointer",
+                      fontWeight: 700,
+                    }}
+                  >
+                    + Add Manager Level
+                  </button>
+                </div>
+
+                {managerLevels.length === 0 ? (
+                  <div style={{ fontSize: 12, color: C.muted }}>
+                    No manager level assigned yet. Click “Add Manager Level”.
+                  </div>
+                ) : (
+                  <div style={{ display: "grid", gap: 8 }}>
+                    {managerLevels.map((level, index) => {
+                      const assignedUser = findUser(level.userId);
+                      return (
+                        <div
+                          key={index}
+                          style={{
+                            display: "grid",
+                            gridTemplateColumns: "110px 1fr auto",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px",
+                            background: C.card,
+                            border: `1px solid ${level.userId ? "#F9731655" : C.border}`,
+                            borderRadius: 9,
+                          }}
+                        >
+                          <div style={{ fontSize: 12, color: "#F97316", fontWeight: 700 }}>
+                            Level {index + 1}
+                          </div>
+                          <select
+                            value={level.userId || ""}
+                            onChange={(e) => setManagerLevelUser(index, e.target.value)}
+                            style={{
+                              width: "100%",
+                              background: C.subtle,
+                              border: `1px solid ${level.userId ? "#F9731655" : C.border}`,
+                              color: level.userId ? C.text : C.muted,
+                              padding: "9px 12px",
+                              borderRadius: 8,
+                              fontSize: 12,
+                              outline: "none",
+                              fontFamily: "inherit",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <option value="">— Select manager —</option>
+                            {roleUserMap.manager.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({ROLE_CONFIG[u.role]?.label || u.role})
+                              </option>
+                            ))}
+                          </select>
+                          <button
+                            type="button"
+                            onClick={() => removeManagerLevel(index)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              color: C.muted,
+                              cursor: "pointer",
+                              fontSize: 18,
+                              lineHeight: 1,
+                            }}
+                          >
+                            ×
+                          </button>
+                          {assignedUser && (
+                            <div style={{ gridColumn: "2 / 4", fontSize: 10, color: C.muted }}>
+                              Pending label will show: Manager Level {index + 1} — {assignedUser.name}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
                 {ROLES_IN_FLOW.map(({ key, label, icon, color, desc, users }) => {
-                  const assigned = current[key];
-                  const assignedUser = findUser(assigned);
+                  const assignedIds =
+                    key === "finance"
+                      ? normalizeFinanceApprovers(current.finance)
+                      : current[key]
+                      ? [current[key]]
+                      : [];
+                  const assignedUsers = assignedIds.map(findUser).filter(Boolean);
+                  const isAssigned = assignedIds.length > 0;
+
+                  const addFinanceApprover = (userId) => {
+                    if (!userId) return;
+                    setField("finance", Array.from(new Set([...assignedIds, userId])));
+                  };
+
+                  const removeFinanceApprover = (userId) => {
+                    setField(
+                      "finance",
+                      assignedIds.filter((id) => id !== userId)
+                    );
+                  };
 
                   return (
                     <div
@@ -441,8 +664,8 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                       style={{
                         padding: "16px 18px",
                         borderRadius: 12,
-                        border: `1px solid ${assigned ? color + "44" : C.border}`,
-                        background: assigned ? color + "0C" : C.subtle,
+                        border: `1px solid ${isAssigned ? color + "44" : C.border}`,
+                        background: isAssigned ? color + "0C" : C.subtle,
                       }}
                     >
                       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
@@ -452,7 +675,7 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                             style={{
                               fontSize: 13,
                               fontWeight: 700,
-                              color: assigned ? color : C.text,
+                              color: isAssigned ? color : C.text,
                             }}
                           >
                             {label}
@@ -461,83 +684,185 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                         </div>
                       </div>
 
-                      <select
-                        value={current[key] || ""}
-                        onChange={(e) => setField(key, e.target.value)}
-                        style={{
-                          width: "100%",
-                          background: C.card,
-                          border: `1px solid ${assigned ? color + "55" : C.border}`,
-                          color: assigned ? C.text : C.muted,
-                          padding: "9px 12px",
-                          borderRadius: 8,
-                          fontSize: 12,
-                          outline: "none",
-                          fontFamily: "inherit",
-                          cursor: "pointer",
-                        }}
-                      >
-                        <option value="">— Not assigned —</option>
-                        {users.map((u) => (
-                          <option key={u.id} value={u.id}>
-                            {u.name} ({ROLE_CONFIG[u.role]?.label || u.role})
-                          </option>
-                        ))}
-                      </select>
+                      {key === "finance" ? (
+                        <>
+                          <select
+                            value=""
+                            onChange={(e) => addFinanceApprover(e.target.value)}
+                            style={{
+                              width: "100%",
+                              background: C.card,
+                              border: `1px solid ${isAssigned ? color + "55" : C.border}`,
+                              color: C.muted,
+                              padding: "9px 12px",
+                              borderRadius: 8,
+                              fontSize: 12,
+                              outline: "none",
+                              fontFamily: "inherit",
+                              cursor: "pointer",
+                            }}
+                          >
+                            <option value="">+ Add finance approver...</option>
+                            {users
+                              .filter((u) => !assignedIds.includes(u.id))
+                              .map((u) => (
+                                <option key={u.id} value={u.id}>
+                                  {u.name} ({ROLE_CONFIG[u.role]?.label || u.role})
+                                </option>
+                              ))}
+                          </select>
 
-                      {assignedUser && (
-                        <div
-                          style={{
-                            marginTop: 8,
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 7,
-                            padding: "6px 10px",
-                            background: color + "15",
-                            border: `1px solid ${color}33`,
-                            borderRadius: 7,
-                          }}
-                        >
-                          <div
+                          {assignedUsers.map((assignedUser) => (
+                            <div
+                              key={assignedUser.id}
+                              style={{
+                                marginTop: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 7,
+                                padding: "6px 10px",
+                                background: color + "15",
+                                border: `1px solid ${color}33`,
+                                borderRadius: 7,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: "50%",
+                                  background: color + "33",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {assignedUser.name?.[0]}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color }}>
+                                  {assignedUser.name}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.muted }}>
+                                  {assignedUser.email}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  marginLeft: "auto",
+                                  fontSize: 9,
+                                  background: color + "22",
+                                  color,
+                                  border: `1px solid ${color}33`,
+                                  borderRadius: 4,
+                                  padding: "2px 6px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                Finance
+                              </div>
+                              <button
+                                onClick={() => removeFinanceApprover(assignedUser.id)}
+                                style={{
+                                  background: "none",
+                                  border: "none",
+                                  color: C.muted,
+                                  cursor: "pointer",
+                                  fontSize: 14,
+                                  lineHeight: 1,
+                                }}
+                              >
+                                ×
+                              </button>
+                            </div>
+                          ))}
+                        </>
+                      ) : (
+                        <>
+                          <select
+                            value={current[key] || ""}
+                            onChange={(e) => setField(key, e.target.value)}
                             style={{
-                              width: 22,
-                              height: 22,
-                              borderRadius: "50%",
-                              background: color + "33",
-                              display: "flex",
-                              alignItems: "center",
-                              justifyContent: "center",
-                              fontSize: 10,
-                              fontWeight: 700,
-                              color,
-                              flexShrink: 0,
+                              width: "100%",
+                              background: C.card,
+                              border: `1px solid ${isAssigned ? color + "55" : C.border}`,
+                              color: isAssigned ? C.text : C.muted,
+                              padding: "9px 12px",
+                              borderRadius: 8,
+                              fontSize: 12,
+                              outline: "none",
+                              fontFamily: "inherit",
+                              cursor: "pointer",
                             }}
                           >
-                            {assignedUser.name?.[0]}
-                          </div>
-                          <div>
-                            <div style={{ fontSize: 11, fontWeight: 600, color }}>
-                              {assignedUser.name}
+                            <option value="">— Not assigned —</option>
+                            {users.map((u) => (
+                              <option key={u.id} value={u.id}>
+                                {u.name} ({ROLE_CONFIG[u.role]?.label || u.role})
+                              </option>
+                            ))}
+                          </select>
+
+                          {assignedUsers.map((assignedUser) => (
+                            <div
+                              key={assignedUser.id}
+                              style={{
+                                marginTop: 8,
+                                display: "flex",
+                                alignItems: "center",
+                                gap: 7,
+                                padding: "6px 10px",
+                                background: color + "15",
+                                border: `1px solid ${color}33`,
+                                borderRadius: 7,
+                              }}
+                            >
+                              <div
+                                style={{
+                                  width: 22,
+                                  height: 22,
+                                  borderRadius: "50%",
+                                  background: color + "33",
+                                  display: "flex",
+                                  alignItems: "center",
+                                  justifyContent: "center",
+                                  fontSize: 10,
+                                  fontWeight: 700,
+                                  color,
+                                  flexShrink: 0,
+                                }}
+                              >
+                                {assignedUser.name?.[0]}
+                              </div>
+                              <div>
+                                <div style={{ fontSize: 11, fontWeight: 600, color }}>
+                                  {assignedUser.name}
+                                </div>
+                                <div style={{ fontSize: 10, color: C.muted }}>
+                                  {assignedUser.email}
+                                </div>
+                              </div>
+                              <div
+                                style={{
+                                  marginLeft: "auto",
+                                  fontSize: 9,
+                                  background: color + "22",
+                                  color,
+                                  border: `1px solid ${color}33`,
+                                  borderRadius: 4,
+                                  padding: "2px 6px",
+                                  fontWeight: 700,
+                                }}
+                              >
+                                {ROLE_CONFIG[assignedUser.role]?.label || assignedUser.role}
+                              </div>
                             </div>
-                            <div style={{ fontSize: 10, color: C.muted }}>
-                              {assignedUser.email}
-                            </div>
-                          </div>
-                          <div
-                            style={{
-                              marginLeft: "auto",
-                              fontSize: 9,
-                              background: color + "22",
-                              color,
-                              border: `1px solid ${color}33`,
-                              borderRadius: 4,
-                              padding: "2px 6px",
-                              fontWeight: 700,
-                            }}
-                          >
-                            {ROLE_CONFIG[assignedUser.role]?.label || assignedUser.role}
-                          </div>
-                        </div>
+                          ))}
+                        </>
                       )}
                     </div>
                   );
@@ -716,7 +1041,7 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                   { label: "Submit", person: "Staff", color: "#6B7A99" },
                   {
                     label: "Manager",
-                    person: findUser(current.manager)?.name || "Not set",
+                    person: managerLevels.map((level) => level.userName || findUser(level.userId)?.name || "Not set").join(" → ") || "Not set",
                     color: "#F97316",
                   },
                   {
@@ -726,7 +1051,11 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                   },
                   {
                     label: "Finance",
-                    person: findUser(current.finance)?.name || "Not set",
+                    person:
+                      normalizeFinanceApprovers(current.finance)
+                        .map((id) => findUser(id)?.name)
+                        .filter(Boolean)
+                        .join(", ") || "Not set",
                     color: "#F59E0B",
                   },
                   {

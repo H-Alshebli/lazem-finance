@@ -31,7 +31,8 @@ export function DataProvider({ children }) {
       id: d,
       name: d,
       manager: "",
-      finance: "",
+      managerApprovers: [],
+      finance: [],
       vp: "",
       hr: "",
       staff: [],
@@ -133,14 +134,34 @@ export function DataProvider({ children }) {
     await Promise.all(unread.map((n) => dismissNotification(n.id)));
   };
 
-  const savePerms = (perms) => {
-    setPermissions_(perms);
-    savePermissions(perms);
+  const savePerms = (permsOrUpdater) => {
+    setPermissions_((prev) => {
+      const next =
+        typeof permsOrUpdater === "function"
+          ? permsOrUpdater(prev || DEFAULT_PERMISSIONS)
+          : permsOrUpdater;
+
+      savePermissions(next).catch((err) =>
+        console.error("Failed to save permissions:", err)
+      );
+
+      return next;
+    });
   };
 
-  const saveDepts = (depts) => {
-    setDeptConfig_(depts);
-    saveDeptConfig(depts);
+  const saveDepts = (deptsOrUpdater) => {
+    setDeptConfig_((prev) => {
+      const next =
+        typeof deptsOrUpdater === "function"
+          ? deptsOrUpdater(prev || [])
+          : deptsOrUpdater;
+
+      saveDeptConfig(next).catch((err) =>
+        console.error("Failed to save department config:", err)
+      );
+
+      return next;
+    });
   };
 
   const unreadCount = notifications.filter((n) => !n.read).length;

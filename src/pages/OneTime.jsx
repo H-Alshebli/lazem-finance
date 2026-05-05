@@ -23,6 +23,8 @@ function OnetimeView({
   addNotif,
   currentUser,
   deptConfig,
+  permissions,
+  effectivePermissions,
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -33,10 +35,11 @@ function OnetimeView({
   const [invoiceFiles, setInvoiceFiles] = useState([]);
   const [editModal, setEditModal] = useState(null);
 
-  const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
-  const isFinance = userRole === "finance" || userRole === "admin";
+  const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
+  const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
+  const isFinance = userRole === "finance" || userRole === "admin" || !!role.canApproveFinance || !!role.canPay;
   const isAdmin = userRole === "admin";
-  const canSeeAll = role.canViewAll;
+  const canSeeAll = !!role.canViewAll;
 
   const resolveUserDepartments = () => {
     const uidOrId = currentUser?.uid || currentUser?.id;

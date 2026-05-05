@@ -68,7 +68,7 @@ export function AuthGate({ children }) {
       id: d,
       name: d,
       manager: "",
-      finance: "",
+      finance: [],
       vp: "",
       hr: "",
       staff: [],
@@ -78,7 +78,7 @@ export function AuthGate({ children }) {
 
   const [screen, setScreen] = useState("login");
   const [loginForm, setLoginForm] = useState({ email: "", password: "" });
-  const [regForm, setRegForm] = useState({ name: "", email: "", password: "", confirm: "" });
+  const [regForm, setRegForm] = useState({ name: "", email: "", department: "", password: "", confirm: "" });
   const [loginErr, setLoginErr] = useState("");
   const [regErr, setRegErr] = useState("");
   const [regSuccess, setRegSuccess] = useState("");
@@ -124,6 +124,7 @@ export function AuthGate({ children }) {
 
     if (!regForm.name.trim()) return setRegErr("Full name is required.");
     if (!regForm.email.includes("@")) return setRegErr("Enter a valid email address.");
+    if (!regForm.department) return setRegErr("Department is required.");
     if (regForm.password.length < 6) return setRegErr("Password must be at least 6 characters.");
     if (regForm.password !== regForm.confirm) return setRegErr("Passwords do not match.");
 
@@ -132,10 +133,11 @@ export function AuthGate({ children }) {
         await AuthGate._firebaseRegister(
           regForm.email.trim(),
           regForm.password,
-          regForm.name.trim()
+          regForm.name.trim(),
+          regForm.department
         );
         setRegSuccess("Account created! Signing you in...");
-        setRegForm({ name: "", email: "", password: "", confirm: "" });
+        setRegForm({ name: "", email: "", department: "", password: "", confirm: "" });
         setTimeout(() => {
           setScreen("login");
           setRegSuccess("");
@@ -164,12 +166,13 @@ export function AuthGate({ children }) {
       email: key,
       password: regForm.password,
       role: "staff",
+      department: regForm.department,
       avatar: regForm.name.trim()[0].toUpperCase(),
     };
 
     setAuthUsers((prev) => ({ ...prev, [key]: newUser }));
     setRegSuccess("Account created! You can now log in.");
-    setRegForm({ name: "", email: "", password: "", confirm: "" });
+    setRegForm({ name: "", email: "", department: "", password: "", confirm: "" });
     setTimeout(() => {
       setScreen("login");
       setRegSuccess("");
@@ -524,6 +527,34 @@ export function AuthGate({ children }) {
                   />
                 </div>
 
+
+                <div>
+                  <label
+                    style={{
+                      fontSize: 11,
+                      color: MUTED,
+                      display: "block",
+                      marginBottom: 6,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    DEPARTMENT *
+                  </label>
+                  <select
+                    className="auth-inp"
+                    value={regForm.department}
+                    onChange={(e) =>
+                      setRegForm((f) => ({ ...f, department: e.target.value }))
+                    }
+                  >
+                    <option value="">Select your department...</option>
+                    {DEPARTMENTS.filter((d) => d !== "All Company").map((d) => (
+                      <option key={d} value={d}>{d}</option>
+                    ))}
+                  </select>
+                </div>
+
                 <div
                   style={{
                     display: "flex",
@@ -822,24 +853,23 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   }, [onetime, setOnetime, addNotification, logAudit]);
 
   const role = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
-  const configuredPages = permissions?.[userRole]?.pages || role.pages || [];
+  const rolePermissions = {
+    ...(DEFAULT_PERMISSIONS[userRole] || {}),
+    ...(permissions?.[userRole] || {}),
+  };
 
-  const firstLaunchPages =
+  // The Permissions page is now the source of truth for sidebar/page visibility.
+  // Defaults still keep the first launch simple, but Admin can publish more pages by enabling them.
+  const configuredPages =
     userRole === "admin"
-      ? role.pages
-      : userRole === "finance" || userRole === "ceo"
-      ? ["dashboard", "onetime", "approvals", "approvals_onetime"]
-      : userRole === "manager"
-      ? ["onetime", "approvals", "approvals_onetime"]
-      : ["onetime"];
+      ? ROLE_CONFIG.admin.pages
+      : rolePermissions.pages || role.pages || [];
 
-  const activePages = configuredPages.filter((page) =>
-    firstLaunchPages.includes(page)
-  );
+  const activePages = [...new Set(configuredPages)].filter(Boolean);
 
   useEffect(() => {
     if (!activePages.includes(view)) {
-      setView(getDefaultView(userRole));
+      setView(activePages[0] || getDefaultView(userRole));
     }
   }, [view, userRole, activePages.join("|")]);
 
@@ -963,6 +993,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     setDeptConfig,
     currentUser,
     permissions,
+    effectivePermissions: rolePermissions,
     setPermissions,
     authUsers,
     setAuthUsers,
@@ -1090,7 +1121,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
           </div>
 
           <div style={{ marginLeft: "auto", display: "flex", gap: 5, flexWrap: "wrap" }}>
-            {role.canSubmit && (
+            {rolePermissions.canSubmit && (
               <span
                 style={{
                   fontSize: 10,
@@ -1106,7 +1137,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
               </span>
             )}
 
-            {role.canPay && (
+            {rolePermissions.canPay && (
               <span
                 style={{
                   fontSize: 10,
@@ -1138,7 +1169,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
               </span>
             )}
 
-            {role.canViewAll && (
+            {rolePermissions.canViewAll && (
               <span
                 style={{
                   fontSize: 10,
