@@ -11,6 +11,7 @@ export const DEPARTMENTS = [
   "Marketing",
   "Training",
   "Preparations",
+  "Quality and compliance",
   "Finance",
   "Legal",
 ];
