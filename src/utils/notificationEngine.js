@@ -4,34 +4,35 @@ const ROLE_STATUS_MAP = {
   pending_approval: ["manager"],
   pending_manager: ["manager"],
 
-  pending_vp: ["vp"],
-  pending_hr: ["hr"],
+  pending_vp: ["vp", "requester"],
+  pending_hr: ["hr", "requester"],
 
-  pending_ceo: ["ceo"],
-  pending_ceo_1: ["ceo"],
-  pending_ceo_2: ["ceo"],
-  pending_schedule_ceo: ["ceo"],
+  pending_ceo: ["ceo", "requester"],
+  pending_ceo_1: ["ceo", "requester"],
+  pending_ceo_2: ["ceo", "requester"],
+  pending_schedule_ceo: ["ceo", "requester"],
 
-  pending_finance: ["finance"],
-  pending_finance_rec: ["finance"],
+  pending_finance: ["finance", "requester"],
+  pending_finance_rec: ["finance", "requester"],
 
-  pending_schedule_preparation: ["finance"],
-  pending_schedule_verified: ["finance"],
-  pending_schedule_review: ["finance"],
-  pending_schedule_final_approval: ["finance"],
+  pending_schedule_preparation: ["finance", "requester"],
+  pending_schedule_verified: ["finance", "requester"],
+  pending_schedule_review: ["finance", "requester"],
+  pending_schedule_final_approval: ["finance", "requester"],
 
-  pending_release_initiation: ["finance"],
-  pending_release_verify: ["finance"],
-  pending_bank_release: ["finance"],
+  pending_release_initiation: ["finance", "requester"],
+  pending_release_verify: ["finance", "requester"],
+  pending_bank: ["finance", "requester"],
+  pending_bank_release: ["finance", "requester"],
 
-  pending_pay: ["finance"],
-  pending_pay_rec: ["finance"],
+  pending_pay: ["finance", "requester"],
+  pending_pay_rec: ["finance", "requester"],
 
-  pending_invoice_upload: ["requester"],
-  pending_invoice: ["requester"],
-  pending_receipt: ["requester"],
+  pending_invoice_upload: ["requester", "staff"],
+  pending_invoice: ["requester", "staff"],
+  pending_receipt: ["requester", "staff"],
 
-  pending_invoice_review: ["finance"],
+  pending_invoice_review: ["finance", "requester"],
 
   closed_paid: ["requester"],
   paid: ["requester"],
@@ -61,6 +62,7 @@ const TYPE_BY_STATUS = {
 
   pending_release_initiation: "approval_required",
   pending_release_verify: "approval_required",
+  pending_bank: "approval_required",
   pending_bank_release: "approval_required",
 
   pending_pay: "payment_due",
@@ -84,57 +86,157 @@ export function statusLabel(status) {
   );
 }
 
+function normalizeText(value) {
+  return String(value || "").trim().toLowerCase();
+}
+
 function normalizeEmail(email) {
-  return String(email || "").trim().toLowerCase();
+  return normalizeText(email);
 }
 
 function normalizeRole(role) {
-  return String(role || "").trim().toLowerCase();
+  return normalizeText(role);
+}
+
+function getUserEmail(user) {
+  return (
+    user?.email ||
+    user?.mail ||
+    user?.userEmail ||
+    user?.value ||
+    ""
+  );
+}
+
+function getUserId(user) {
+  return (
+    user?.id ||
+    user?.uid ||
+    user?.userId ||
+    user?.value ||
+    ""
+  );
 }
 
 function uniqueUsers(users = []) {
   const map = new Map();
 
   users.forEach((u) => {
-    const key = u?.id || u?.uid || normalizeEmail(u?.email);
-    if (key) map.set(key, u);
+    if (!u) return;
+
+    const email = getUserEmail(u);
+    const id = getUserId(u);
+    const key = id || normalizeEmail(email);
+
+    if (!key) return;
+
+    map.set(normalizeText(key), {
+      ...u,
+      email,
+    });
   });
 
   return [...map.values()];
 }
 
-function matchUser(users, key) {
-  const value = String(key || "").trim().toLowerCase();
+function matchUser(users = [], key) {
+  if (!key) return null;
+
+  if (typeof key === "object") {
+    const possible =
+      matchUser(users, key.id) ||
+      matchUser(users, key.uid) ||
+      matchUser(users, key.userId) ||
+      matchUser(users, key.email) ||
+      matchUser(users, key.mail) ||
+      matchUser(users, key.userEmail) ||
+      matchUser(users, key.value) ||
+      matchUser(users, key.name) ||
+      matchUser(users, key.displayName) ||
+      matchUser(users, key.label);
+
+    if (possible) return possible;
+
+    const email = getUserEmail(key);
+    if (email) {
+      return {
+        ...key,
+        email,
+      };
+    }
+
+    return null;
+  }
+
+  const value = normalizeText(key);
   if (!value) return null;
 
-  return users.find(
-    (u) =>
-      String(u?.id || "").toLowerCase() === value ||
-      String(u?.uid || "").toLowerCase() === value ||
-      normalizeEmail(u?.email) === value
+  return (users || []).find((u) => {
+    const userEmail = normalizeEmail(getUserEmail(u));
+    const userId = normalizeText(getUserId(u));
+    const uid = normalizeText(u?.uid);
+    const id = normalizeText(u?.id);
+    const userIdField = normalizeText(u?.userId);
+    const name = normalizeText(u?.name);
+    const displayName = normalizeText(u?.displayName);
+    const label = normalizeText(u?.label);
+
+    return (
+      id === value ||
+      uid === value ||
+      userId === value ||
+      userIdField === value ||
+      userEmail === value ||
+      name === value ||
+      displayName === value ||
+      label === value
+    );
+  });
+}
+
+function getItemDepartmentName(item) {
+  return (
+    item?.approvalDepartment ||
+    item?.department ||
+    item?.creatorDepartment ||
+    item?.requestDepartment ||
+    item?.requestedDepartment ||
+    item?.departmentName ||
+    item?.staffDepartment ||
+    item?.userDepartment ||
+    item?.submittedByDepartment ||
+    item?.requestedFor ||
+    ""
   );
 }
 
 function deptUsers({ item, roleKey, allUsers, deptConfig }) {
-  const departmentName =
-    item?.approvalDepartment ||
-    item?.department ||
-    item?.creatorDepartment ||
-    "";
+  const departmentName = getItemDepartmentName(item);
 
   const dept = (deptConfig || []).find(
-    (d) => d.id === departmentName || d.name === departmentName
+    (d) =>
+      normalizeText(d?.id) === normalizeText(departmentName) ||
+      normalizeText(d?.name) === normalizeText(departmentName)
   );
 
-  if (!dept) return [];
+  if (!dept) {
+    console.warn("No department config found for notification:", {
+      departmentName,
+      roleKey,
+      itemId: item?.id,
+      itemTitle: item?.title,
+      itemStatus: item?.status,
+    });
+    return [];
+  }
 
   const fieldsByRole = {
-    manager: ["manager", "managerApprovers"],
-    finance: ["finance"],
-    vp: ["vp"],
-    hr: ["hr"],
-    staff: ["staff"],
-    ceo: ["ceo"],
+    manager: ["manager", "managerApprovers", "managers"],
+    finance: ["finance", "financeApprovers", "financeUsers"],
+    vp: ["vp", "vpApprover"],
+    hr: ["hr", "hrApprover"],
+    staff: ["staff", "staffMembers", "users"],
+    ceo: ["ceo", "ceoApprover"],
   };
 
   const keys = [];
@@ -149,10 +251,21 @@ function deptUsers({ item, roleKey, allUsers, deptConfig }) {
     }
   });
 
-  return keys.map((key) => matchUser(allUsers, key)).filter(Boolean);
+  const matched = keys
+    .map((key) => matchUser(allUsers, key))
+    .filter(Boolean);
+
+  console.log("Department notification lookup:", {
+    departmentName,
+    roleKey,
+    keys,
+    matchedEmails: matched.map((u) => getUserEmail(u)).filter(Boolean),
+  });
+
+  return matched;
 }
 
-function roleUsers(role, allUsers) {
+function roleUsers(role, allUsers = []) {
   const wanted = normalizeRole(role);
 
   return (allUsers || []).filter((u) => {
@@ -166,17 +279,61 @@ function roleUsers(role, allUsers) {
   });
 }
 
-function requesterUser(item, allUsers) {
+function requesterUser(item, allUsers = []) {
   return (
     matchUser(allUsers, item?.submittedById) ||
     matchUser(allUsers, item?.submittedByEmail) ||
+    matchUser(allUsers, item?.createdById) ||
+    matchUser(allUsers, item?.createdByEmail) ||
+    matchUser(allUsers, item?.requesterId) ||
+    matchUser(allUsers, item?.requesterEmail) ||
+    matchUser(allUsers, item?.staffId) ||
+    matchUser(allUsers, item?.staffEmail) ||
+    matchUser(allUsers, item?.createdBy) ||
+    matchUser(allUsers, item?.submittedBy) ||
     (item?.submittedByEmail
       ? {
           email: item.submittedByEmail,
           name: item.submittedBy || "Requester",
         }
+      : null) ||
+    (item?.createdByEmail
+      ? {
+          email: item.createdByEmail,
+          name: item.createdBy || "Requester",
+        }
+      : null) ||
+    (item?.requesterEmail
+      ? {
+          email: item.requesterEmail,
+          name: item.requesterName || "Requester",
+        }
+      : null) ||
+    (item?.staffEmail
+      ? {
+          email: item.staffEmail,
+          name: item.staffName || "Requester",
+        }
       : null)
   );
+}
+
+function staffUsers(item, allUsers, deptConfig) {
+  const users = [];
+
+  const fromDept = deptUsers({
+    item,
+    roleKey: "staff",
+    allUsers,
+    deptConfig,
+  });
+
+  users.push(...fromDept);
+
+  const requester = requesterUser(item, allUsers);
+  if (requester) users.push(requester);
+
+  return uniqueUsers(users);
 }
 
 export function getRecipientsForStatus({
@@ -188,10 +345,23 @@ export function getRecipientsForStatus({
   const targets = ROLE_STATUS_MAP[status] || [];
   const users = [];
 
+  console.log("Notification status lookup:", {
+    status,
+    targets,
+    itemId: item?.id,
+    itemTitle: item?.title,
+    department: getItemDepartmentName(item),
+  });
+
   targets.forEach((target) => {
     if (target === "requester") {
       const requester = requesterUser(item, allUsers);
       if (requester) users.push(requester);
+      return;
+    }
+
+    if (target === "staff") {
+      users.push(...staffUsers(item, allUsers, deptConfig));
       return;
     }
 
@@ -205,11 +375,26 @@ export function getRecipientsForStatus({
     users.push(...fromDept);
 
     if (fromDept.length === 0) {
-      users.push(...roleUsers(target, allUsers));
+      const fallback = roleUsers(target, allUsers);
+      users.push(...fallback);
+
+      console.log("Role fallback notification lookup:", {
+        target,
+        fallbackEmails: fallback.map((u) => getUserEmail(u)).filter(Boolean),
+      });
     }
   });
 
-  return uniqueUsers(users).filter((u) => normalizeEmail(u?.email));
+  const finalUsers = uniqueUsers(users).filter((u) =>
+    normalizeEmail(getUserEmail(u))
+  );
+
+  console.log("Final notification recipients:", {
+    status,
+    emails: finalUsers.map((u) => getUserEmail(u)).filter(Boolean),
+  });
+
+  return finalUsers;
 }
 
 export function getNoteRecipients({
@@ -230,11 +415,10 @@ export function getNoteRecipients({
   const requester = requesterUser(item, allUsers);
   if (requester) recipients.push(requester);
 
-  return uniqueUsers(recipients).filter(
-    (u) =>
-      normalizeEmail(u?.email) &&
-      normalizeEmail(u.email) !== normalizeEmail(actorEmail)
-  );
+  return uniqueUsers(recipients).filter((u) => {
+    const email = normalizeEmail(getUserEmail(u));
+    return email && email !== normalizeEmail(actorEmail);
+  });
 }
 
 export async function sendEmailNotification({
@@ -244,9 +428,10 @@ export async function sendEmailNotification({
   requestTitle,
   status,
   actorName,
+  requestUrl,
 }) {
   const to = uniqueUsers(recipients)
-    .map((u) => u.email)
+    .map((u) => getUserEmail(u))
     .filter(Boolean);
 
   console.log("Notification email recipients:", to);
@@ -270,6 +455,7 @@ export async function sendEmailNotification({
         requestTitle,
         statusLabel: statusLabel(status),
         actorName,
+        requestUrl,
       }),
     });
 
@@ -320,12 +506,6 @@ export function findNewHistoryNote(oldItem, newItem) {
 
   const latest = newHistory[newHistory.length - 1];
   if (!latest?.note) return null;
-
-  const text = String(latest.note || "");
-
-  if (text.includes("💬") || text.toLowerCase().includes("note")) {
-    return latest;
-  }
 
   return latest;
 }
