@@ -153,7 +153,10 @@ function matchUser(users = [], key) {
       matchUser(users, key.value) ||
       matchUser(users, key.name) ||
       matchUser(users, key.displayName) ||
-      matchUser(users, key.label);
+      matchUser(users, key.label) ||
+      matchUser(users, key.manager) ||
+      matchUser(users, key.approver) ||
+      matchUser(users, key.user);
 
     if (possible) return possible;
 
@@ -210,6 +213,58 @@ function getItemDepartmentName(item) {
   );
 }
 
+function extractKeysFromValue(value) {
+  const keys = [];
+
+  if (Array.isArray(value)) {
+    value.forEach((v) => {
+      keys.push(...extractKeysFromValue(v));
+    });
+
+    return keys;
+  }
+
+  if (typeof value === "object" && value !== null) {
+    keys.push(
+      value.userId,
+      value.uid,
+      value.id,
+      value.email,
+      value.mail,
+      value.userEmail,
+      value.value,
+      value.manager,
+      value.approver,
+      value.user,
+      value.name,
+      value.displayName,
+      value.label
+    );
+
+    // Support nested approval-level structures like:
+    // { level: 1, user: "uid" }
+    // { level: 1, approver: { id, email } }
+    // { manager: { id, email } }
+    if (value.user && typeof value.user === "object") {
+      keys.push(...extractKeysFromValue(value.user));
+    }
+
+    if (value.approver && typeof value.approver === "object") {
+      keys.push(...extractKeysFromValue(value.approver));
+    }
+
+    if (value.manager && typeof value.manager === "object") {
+      keys.push(...extractKeysFromValue(value.manager));
+    }
+
+    return keys.filter(Boolean);
+  }
+
+  if (value) keys.push(value);
+
+  return keys.filter(Boolean);
+}
+
 function deptUsers({ item, roleKey, allUsers, deptConfig }) {
   const departmentName = getItemDepartmentName(item);
 
@@ -231,7 +286,14 @@ function deptUsers({ item, roleKey, allUsers, deptConfig }) {
   }
 
   const fieldsByRole = {
-    manager: ["manager", "managerApprovers", "managers"],
+    manager: [
+      "manager",
+      "managerApprovers",
+      "managers",
+      "managerApprovalLevels",
+      "approvalLevels",
+      "levels",
+    ],
     finance: ["finance", "financeApprovers", "financeUsers"],
     vp: ["vp", "vpApprover"],
     hr: ["hr", "hrApprover"],
@@ -243,12 +305,7 @@ function deptUsers({ item, roleKey, allUsers, deptConfig }) {
 
   (fieldsByRole[roleKey] || []).forEach((field) => {
     const value = dept[field];
-
-    if (Array.isArray(value)) {
-      keys.push(...value);
-    } else if (value) {
-      keys.push(value);
-    }
+    keys.push(...extractKeysFromValue(value));
   });
 
   const matched = keys
@@ -258,6 +315,8 @@ function deptUsers({ item, roleKey, allUsers, deptConfig }) {
   console.log("Department notification lookup:", {
     departmentName,
     roleKey,
+    fieldsChecked: fieldsByRole[roleKey] || [],
+    rawDepartmentConfig: dept,
     keys,
     matchedEmails: matched.map((u) => getUserEmail(u)).filter(Boolean),
   });
