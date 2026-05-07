@@ -14,6 +14,13 @@ import {
   COL,
 } from "../firebase/firestore";
 import { DEFAULT_PERMISSIONS, DEPARTMENTS } from "../utils/constants";
+import {
+  buildStatusNotification,
+  findNewHistoryNote,
+  getNoteRecipients,
+  getRecipientsForStatus,
+  sendEmailNotification,
+} from "../utils/notificationEngine";
 
 const DataContext = createContext(null);
 
@@ -118,19 +125,21 @@ export function DataProvider({ children }) {
       amount,
     });
 
-  const addNotification = (type, title, body) =>
+  const addNotification = (type, title, body, meta = {}) =>
     addItem(COL.notifications, {
       type,
       title,
       body,
       read: false,
+      timestamp: new Date().toISOString(),
+      ...meta,
     });
 
   const dismissNotification = (id) =>
     updateItem(COL.notifications, id, { read: true });
 
   const dismissAllNotifications = async () => {
-    const unread = notifications.filter((n) => !n.read);
+    const unread = myNotifications.filter((n) => !n.read);
     await Promise.all(unread.map((n) => dismissNotification(n.id)));
   };
 
@@ -164,7 +173,22 @@ export function DataProvider({ children }) {
     });
   };
 
-  const unreadCount = notifications.filter((n) => !n.read).length;
+  const isNotificationForMe = (n) => {
+    if (!n) return false;
+    if (!n.recipientIds && !n.recipientEmails) return true;
+
+    const myId = currentUser?.uid || currentUser?.id;
+    const myEmail = String(currentUser?.email || "").toLowerCase();
+
+    return (
+      (Array.isArray(n.recipientIds) && n.recipientIds.includes(myId)) ||
+      (Array.isArray(n.recipientEmails) &&
+        n.recipientEmails.map((e) => String(e).toLowerCase()).includes(myEmail))
+    );
+  };
+
+  const myNotifications = notifications.filter(isNotificationForMe);
+  const unreadCount = myNotifications.filter((n) => !n.read).length;
 
   const setFirebaseUserRole = async (userId, newRole) => {
     await updateUserRole(userId, newRole);
@@ -242,6 +266,90 @@ export function DataProvider({ children }) {
     });
   };
 
+  const notifyRequestChange = async ({ oldItem, newItem, reason = "status" }) => {
+    if (!newItem) return;
+
+    const actorName = userProfile?.name || currentUser?.displayName || "System";
+    const actorEmail = currentUser?.email || "";
+    const oldStatus = oldItem?.status;
+    const newStatus = newItem?.status;
+
+    if (reason === "note") {
+      const latestNote = findNewHistoryNote(oldItem, newItem);
+      if (!latestNote) return;
+
+      const recipients = getNoteRecipients({
+        item: newItem,
+        allUsers,
+        deptConfig,
+        actorEmail,
+      });
+
+      if (!recipients.length) return;
+
+      const title = `New Note: ${newItem.title || "Request"}`;
+      const body = `${latestNote.by || actorName} added a note on ${newItem.title || "the request"}: ${latestNote.note}`;
+      const recipientIds = recipients.map((u) => u.id || u.uid).filter(Boolean);
+      const recipientEmails = recipients.map((u) => u.email).filter(Boolean);
+
+      await addNotification("note", title, body, {
+        requestId: newItem.id,
+        requestType: "one-time",
+        status: newStatus,
+        recipientIds,
+        recipientEmails,
+      });
+
+      await sendEmailNotification({
+        recipients,
+        title,
+        body,
+        requestTitle: newItem.title,
+        status: newStatus,
+        actorName,
+      });
+      return;
+    }
+
+    if (oldStatus === newStatus && oldItem) return;
+
+    const recipients = getRecipientsForStatus({
+      item: newItem,
+      status: newStatus,
+      allUsers,
+      deptConfig,
+    });
+
+    if (!recipients.length) return;
+
+    const built = buildStatusNotification({
+      item: newItem,
+      oldStatus,
+      newStatus,
+      actorName,
+    });
+
+    const recipientIds = recipients.map((u) => u.id || u.uid).filter(Boolean);
+    const recipientEmails = recipients.map((u) => u.email).filter(Boolean);
+
+    await addNotification(built.type, built.title, built.body, {
+      requestId: newItem.id,
+      requestType: "one-time",
+      status: newStatus,
+      recipientIds,
+      recipientEmails,
+    });
+
+    await sendEmailNotification({
+      recipients,
+      title: built.title,
+      body: built.body,
+      requestTitle: newItem.title,
+      status: newStatus,
+      actorName,
+    });
+  };
+
   const smartSetOnetime = (fn) => {
     const newItems = typeof fn === "function" ? fn(onetime) : fn;
 
@@ -251,8 +359,15 @@ export function DataProvider({ children }) {
       if (!exists) {
         const { id, ...rest } = item;
         addItem(COL.onetime, sanitize(rest));
+        notifyRequestChange({ oldItem: null, newItem: item, reason: "status" });
       } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
         updateItem(COL.onetime, item.id, sanitize(item));
+
+        if (exists.status !== item.status) {
+          notifyRequestChange({ oldItem: exists, newItem: item, reason: "status" });
+        } else {
+          notifyRequestChange({ oldItem: exists, newItem: item, reason: "note" });
+        }
       }
     });
   };
@@ -279,7 +394,8 @@ export function DataProvider({ children }) {
         onetime,
         entitlements,
         auditLog,
-        notifications,
+        notifications: myNotifications,
+        allNotifications: notifications,
         permissions,
         deptConfig,
         allUsers,

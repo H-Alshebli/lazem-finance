@@ -8,6 +8,7 @@ function NotificationsView({ notifs = [], onDismiss, onDismissAll }) {
     new_submission: { icon: "📥", color: C.green, label: "New Submission" },
     rejected: { icon: "✗", color: C.red, label: "Rejected" },
     paid: { icon: "✓", color: C.green, label: "Paid" },
+    note: { icon: "💬", color: C.accent, label: "Note" },
   };
 
   const unread = notifs.filter((n) => !n.read).length;
@@ -128,7 +129,7 @@ function NotificationsView({ notifs = [], onDismiss, onDismissAll }) {
                 <div style={{ fontSize: 12, color: C.muted }}>{n.body}</div>
 
                 <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>
-                  {new Date(n.timestamp).toLocaleString("en-GB", {
+                  {new Date(n.timestamp || n.createdAt?.seconds * 1000 || Date.now()).toLocaleString("en-GB", {
                     day: "2-digit",
                     month: "short",
                     hour: "2-digit",
