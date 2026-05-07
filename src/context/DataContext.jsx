@@ -224,8 +224,14 @@ export function DataProvider({ children }) {
   const getRequestUrl = (item) => {
     if (typeof window === "undefined" || !item?.id) return "";
 
-    // Change this route if your one-time details page uses another path.
-    return `${window.location.origin}/onetime/${item.id}`;
+    const status = String(item.status || "");
+
+    const targetView =
+      status.startsWith("pending") && status !== "pending_invoice_upload"
+        ? "approvals_onetime"
+        : "onetime";
+
+    return `${window.location.origin}/?view=${targetView}&requestId=${item.id}`;
   };
 
   const notifyRequestChange = async ({ oldItem, newItem, reason = "status" }) => {
@@ -264,6 +270,7 @@ export function DataProvider({ children }) {
         status: newStatus,
         recipientIds,
         recipientEmails,
+        requestUrl,
       });
 
       await sendEmailNotification({
@@ -306,6 +313,7 @@ export function DataProvider({ children }) {
       status: newStatus,
       recipientIds,
       recipientEmails,
+      requestUrl,
     });
 
     await sendEmailNotification({
