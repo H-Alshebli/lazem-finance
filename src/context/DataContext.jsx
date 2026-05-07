@@ -65,45 +65,15 @@ export function DataProvider({ children }) {
       ),
       listenCol(COL.auditLog, setAuditLog, "createdAt"),
       listenCol(COL.notifications, setNotifications, "createdAt"),
-      listenPermissions((p) => setPermissions_((prev) => ({ ...prev, ...(p || {}) }))),
+      listenPermissions((p) =>
+        setPermissions_((prev) => ({ ...prev, ...(p || {}) }))
+      ),
       listenDeptConfig(setDeptConfig_),
       listenAllUsers(setAllUsers),
     ];
 
     return () => subs.forEach((u) => u && u());
   }, [currentUser?.uid]);
-
-  const addRecurring = (data) =>
-    addItem(COL.recurring, {
-      ...sanitize(data),
-      submittedBy: userProfile?.name,
-      submittedById: currentUser?.uid,
-    });
-
-  const updateRecurring = (id, data) =>
-    updateItem(COL.recurring, id, sanitize(data));
-
-  const deleteRecurring = (id) => deleteItem(COL.recurring, id);
-
-  const addOnetime = (data) =>
-    addItem(COL.onetime, {
-      ...sanitize(data),
-      submittedBy: userProfile?.name,
-      submittedById: currentUser?.uid,
-    });
-
-  const updateOnetime = (id, data) =>
-    updateItem(COL.onetime, id, sanitize(data));
-
-  const addEntitlement = (data) =>
-    addItem(COL.entitlements, {
-      ...sanitize(data),
-      submittedBy: userProfile?.name,
-      submittedById: currentUser?.uid,
-    });
-
-  const updateEntitlement = (id, data) =>
-    updateItem(COL.entitlements, id, sanitize(data));
 
   const logAudit = (
     action,
@@ -251,21 +221,6 @@ export function DataProvider({ children }) {
         : item.receiptUploaded,
     }));
 
-  const smartSetRecurring = (fn) => {
-    const newItems = typeof fn === "function" ? fn(recurring) : fn;
-
-    newItems.forEach((item) => {
-      const exists = recurring.find((r) => r.id === item.id);
-
-      if (!exists) {
-        const { id, ...rest } = item;
-        addItem(COL.recurring, sanitize(rest));
-      } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
-        updateItem(COL.recurring, item.id, sanitize(item));
-      }
-    });
-  };
-
   const notifyRequestChange = async ({ oldItem, newItem, reason = "status" }) => {
     if (!newItem) return;
 
@@ -288,7 +243,10 @@ export function DataProvider({ children }) {
       if (!recipients.length) return;
 
       const title = `New Note: ${newItem.title || "Request"}`;
-      const body = `${latestNote.by || actorName} added a note on ${newItem.title || "the request"}: ${latestNote.note}`;
+      const body = `${latestNote.by || actorName} added a note on ${
+        newItem.title || "the request"
+      }: ${latestNote.note}`;
+
       const recipientIds = recipients.map((u) => u.id || u.uid).filter(Boolean);
       const recipientEmails = recipients.map((u) => u.email).filter(Boolean);
 
@@ -308,6 +266,7 @@ export function DataProvider({ children }) {
         status: newStatus,
         actorName,
       });
+
       return;
     }
 
@@ -350,6 +309,92 @@ export function DataProvider({ children }) {
     });
   };
 
+  const addRecurring = (data) =>
+    addItem(COL.recurring, {
+      ...sanitize(data),
+      submittedBy: userProfile?.name,
+      submittedById: currentUser?.uid,
+    });
+
+  const updateRecurring = (id, data) =>
+    updateItem(COL.recurring, id, sanitize(data));
+
+  const deleteRecurring = (id) => deleteItem(COL.recurring, id);
+
+  const addOnetime = async (data) => {
+    const itemToSave = {
+      ...sanitize(data),
+      submittedBy: userProfile?.name,
+      submittedById: currentUser?.uid,
+      submittedByEmail: currentUser?.email,
+    };
+
+    const newId = await addItem(COL.onetime, itemToSave);
+
+    await notifyRequestChange({
+      oldItem: null,
+      newItem: {
+        ...itemToSave,
+        id: newId,
+      },
+      reason: "status",
+    });
+
+    return newId;
+  };
+
+  const updateOnetime = async (id, data) => {
+    const oldItem = onetime.find((o) => o.id === id);
+    const cleanData = sanitize(data);
+
+    await updateItem(COL.onetime, id, cleanData);
+
+    const newItem = {
+      ...(oldItem || {}),
+      ...cleanData,
+      id,
+    };
+
+    if (!oldItem || oldItem.status !== newItem.status) {
+      await notifyRequestChange({
+        oldItem,
+        newItem,
+        reason: "status",
+      });
+    } else {
+      await notifyRequestChange({
+        oldItem,
+        newItem,
+        reason: "note",
+      });
+    }
+  };
+
+  const addEntitlement = (data) =>
+    addItem(COL.entitlements, {
+      ...sanitize(data),
+      submittedBy: userProfile?.name,
+      submittedById: currentUser?.uid,
+    });
+
+  const updateEntitlement = (id, data) =>
+    updateItem(COL.entitlements, id, sanitize(data));
+
+  const smartSetRecurring = (fn) => {
+    const newItems = typeof fn === "function" ? fn(recurring) : fn;
+
+    newItems.forEach((item) => {
+      const exists = recurring.find((r) => r.id === item.id);
+
+      if (!exists) {
+        const { id, ...rest } = item;
+        addItem(COL.recurring, sanitize(rest));
+      } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
+        updateItem(COL.recurring, item.id, sanitize(item));
+      }
+    });
+  };
+
   const smartSetOnetime = (fn) => {
     const newItems = typeof fn === "function" ? fn(onetime) : fn;
 
@@ -364,9 +409,17 @@ export function DataProvider({ children }) {
         updateItem(COL.onetime, item.id, sanitize(item));
 
         if (exists.status !== item.status) {
-          notifyRequestChange({ oldItem: exists, newItem: item, reason: "status" });
+          notifyRequestChange({
+            oldItem: exists,
+            newItem: item,
+            reason: "status",
+          });
         } else {
-          notifyRequestChange({ oldItem: exists, newItem: item, reason: "note" });
+          notifyRequestChange({
+            oldItem: exists,
+            newItem: item,
+            reason: "note",
+          });
         }
       }
     });
@@ -426,5 +479,5 @@ export function DataProvider({ children }) {
     </DataContext.Provider>
   );
 }
- 
+
 export const useData = () => useContext(DataContext);
