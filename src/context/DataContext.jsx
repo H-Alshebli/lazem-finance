@@ -221,6 +221,13 @@ export function DataProvider({ children }) {
         : item.receiptUploaded,
     }));
 
+  const getRequestUrl = (item) => {
+    if (typeof window === "undefined" || !item?.id) return "";
+
+    // Change this route if your one-time details page uses another path.
+    return `${window.location.origin}/onetime/${item.id}`;
+  };
+
   const notifyRequestChange = async ({ oldItem, newItem, reason = "status" }) => {
     if (!newItem) return;
 
@@ -228,6 +235,7 @@ export function DataProvider({ children }) {
     const actorEmail = currentUser?.email || "";
     const oldStatus = oldItem?.status;
     const newStatus = newItem?.status;
+    const requestUrl = getRequestUrl(newItem);
 
     if (reason === "note") {
       const latestNote = findNewHistoryNote(oldItem, newItem);
@@ -265,6 +273,7 @@ export function DataProvider({ children }) {
         requestTitle: newItem.title,
         status: newStatus,
         actorName,
+        requestUrl,
       });
 
       return;
@@ -306,6 +315,7 @@ export function DataProvider({ children }) {
       requestTitle: newItem.title,
       status: newStatus,
       actorName,
+      requestUrl,
     });
   };
 
@@ -404,7 +414,12 @@ export function DataProvider({ children }) {
       if (!exists) {
         const { id, ...rest } = item;
         addItem(COL.onetime, sanitize(rest));
-        notifyRequestChange({ oldItem: null, newItem: item, reason: "status" });
+
+        notifyRequestChange({
+          oldItem: null,
+          newItem: item,
+          reason: "status",
+        });
       } else if (JSON.stringify(exists) !== JSON.stringify(item)) {
         updateItem(COL.onetime, item.id, sanitize(item));
 
