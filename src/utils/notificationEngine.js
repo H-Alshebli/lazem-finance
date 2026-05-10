@@ -401,6 +401,28 @@ export function getRecipientsForStatus({
   allUsers = [],
   deptConfig = [],
 }) {
+  if (status === "pending_manager") {
+    const currentApprover =
+      matchUser(allUsers, item?.currentApproverId) ||
+      matchUser(allUsers, item?.currentApproverEmail) ||
+      (item?.currentApproverEmail
+        ? {
+            id: item.currentApproverId || item.currentApproverEmail,
+            name: item.currentApproverName || "Manager",
+            email: item.currentApproverEmail,
+          }
+        : null);
+
+    if (currentApprover && normalizeEmail(getUserEmail(currentApprover))) {
+      console.log("Pending manager current approver recipient:", {
+        email: getUserEmail(currentApprover),
+        name: currentApprover.name || item?.currentApproverName,
+        level: item?.currentManagerLevel,
+      });
+      return [currentApprover];
+    }
+  }
+
   const targets = ROLE_STATUS_MAP[status] || [];
   const users = [];
 

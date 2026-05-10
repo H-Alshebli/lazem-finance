@@ -919,12 +919,24 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     myManagedDepts.includes(item.department) ||
     item.department === "All Company";
 
+  const isCurrentApprover = (item) => {
+    const myValues = [currentUser?.id, currentUser?.uid, currentUser?.email]
+      .filter(Boolean)
+      .map((v) => String(v).trim().toLowerCase());
+
+    const approverValues = [item?.currentApproverId, item?.currentApproverEmail]
+      .filter(Boolean)
+      .map((v) => String(v).trim().toLowerCase());
+
+    return approverValues.some((v) => myValues.includes(v));
+  };
+
   const roleApprovalCount = (() => {
     if (userRole === "admin") return totalPendingApproval;
 
     if (userRole === "manager") {
       return (
-        (onetime || []).filter((o) => o.status === "pending_manager" && deptFilter(o)).length +
+        (onetime || []).filter((o) => o.status === "pending_manager" && (isCurrentApprover(o) || (!o.currentApproverId && deptFilter(o)))).length +
         (entitlements || []).filter((e) => e.status === "pending_manager" && deptFilter(e)).length +
         (recurring || []).filter((r) => r.status === "pending_approval" && deptFilter(r)).length
       );

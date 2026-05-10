@@ -162,6 +162,104 @@ function OnetimeView({
         (typeof f?.dataUrl === "string" && f.dataUrl.trim())
     );
 
+  const normalizeManagerApprovers = (department) => {
+    const levels = Array.isArray(department?.managerApprovers)
+      ? department.managerApprovers
+      : [];
+
+    const normalizedLevels = levels
+      .map((level, index) => {
+        const userId = typeof level === "string" ? level : level?.userId || level?.id || level?.uid || "";
+        if (!userId) return null;
+
+        return {
+          level: Number(level?.level || index + 1),
+          userId,
+          userName: level?.userName || level?.name || level?.displayName || "",
+          userEmail: level?.userEmail || level?.email || level?.mail || "",
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => Number(a.level || 0) - Number(b.level || 0));
+
+    if (normalizedLevels.length > 0) return normalizedLevels;
+
+    if (department?.manager) {
+      return [
+        {
+          level: 1,
+          userId: department.manager,
+          userName: "",
+          userEmail: "",
+        },
+      ];
+    }
+
+    return [];
+  };
+
+  const userMatchesCurrentUser = (value) => {
+    const wanted = String(value || "").trim().toLowerCase();
+    if (!wanted) return false;
+
+    return [
+      currentUser?.id,
+      currentUser?.uid,
+      currentUser?.email,
+      currentUser?.name,
+      username,
+    ]
+      .filter(Boolean)
+      .map((v) => String(v).trim().toLowerCase())
+      .includes(wanted);
+  };
+
+  const getDepartmentConfigByName = (departmentName) =>
+    (deptConfig || []).find(
+      (d) =>
+        String(d.id || "").toLowerCase() === String(departmentName || "").toLowerCase() ||
+        String(d.name || "").toLowerCase() === String(departmentName || "").toLowerCase()
+    ) || null;
+
+  const buildInitialApprovalRoute = (approvalDepartment) => {
+    const department = getDepartmentConfigByName(approvalDepartment);
+    const managerApprovalLevels = normalizeManagerApprovers(department);
+
+    const requesterManagerIndex = managerApprovalLevels.findIndex(
+      (level) =>
+        userMatchesCurrentUser(level.userId) ||
+        userMatchesCurrentUser(level.userEmail) ||
+        userMatchesCurrentUser(level.userName)
+    );
+
+    const nextManagerIndex = requesterManagerIndex >= 0 ? requesterManagerIndex + 1 : 0;
+    const nextManager = managerApprovalLevels[nextManagerIndex] || null;
+
+    if (nextManager) {
+      return {
+        status: "pending_manager",
+        managerApprovalLevels,
+        currentManagerLevel: nextManager.level,
+        currentApproverId: nextManager.userId || "",
+        currentApproverName: nextManager.userName || nextManager.userEmail || nextManager.userId || "",
+        currentApproverEmail: nextManager.userEmail || "",
+        currentApproverRole: `Manager Level ${nextManager.level}`,
+        firstApprovalNote: `Request submitted → Manager Level ${nextManager.level}`,
+      };
+    }
+
+    return {
+      status: "pending_ceo",
+      managerApprovalLevels,
+      currentManagerLevel: null,
+      currentApproverId: "ceo",
+      currentApproverName: "CEO",
+      currentApproverEmail: "",
+      currentApproverRole: "CEO",
+      firstApprovalNote: "Request submitted → CEO approval",
+    };
+  };
+
   const validateRequestForm = (data, isEdit = false) => {
     if (!data.title?.trim()) {
       showNotif("Title is required", "error");
@@ -220,6 +318,8 @@ function OnetimeView({
       ? "IT"
       : creatorDepartment || form.department || "";
 
+    const approvalRoute = buildInitialApprovalRoute(approvalDepartment);
+
     const newItem = {
       ...form,
       id: uid(),
@@ -232,16 +332,23 @@ function OnetimeView({
       submittedByEmail: currentUser?.email || "",
       requestDate: today(),
       requestedPaymentDate: form.dueDate,
-      status: "pending_manager",
+      status: approvalRoute.status,
+      managerApprovalLevels: approvalRoute.managerApprovalLevels,
+      currentManagerLevel: approvalRoute.currentManagerLevel,
+      currentApproverId: approvalRoute.currentApproverId,
+      currentApproverName: approvalRoute.currentApproverName,
+      currentApproverEmail: approvalRoute.currentApproverEmail,
+      currentApproverRole: approvalRoute.currentApproverRole,
       history: [
         {
-          status: "pending_manager",
+          status: approvalRoute.status,
           by: username,
           date: today(),
-          note: `Request submitted with quotations · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
+          note: `${approvalRoute.firstApprovalNote} · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
         },
       ],
       managerApproval: null,
+      managerApprovals: [],
       ceo1Approval: null,
       financeApproval: null,
       financeSchedule: null,
@@ -270,11 +377,11 @@ function OnetimeView({
       addNotif(
         "new_submission",
         `New Request: ${newItem.title}`,
-        `Submitted by ${username} — awaiting Manager approval`
+        `Submitted by ${username} — awaiting ${newItem.currentApproverRole || statusConfig[newItem.status]?.label || "approval"}`
       );
     }
 
-    showNotif("Request submitted for Manager approval!");
+    showNotif(`Request submitted for ${newItem.currentApproverRole || "approval"}!`);
   };
 
   const saveNote = () => {
