@@ -721,7 +721,8 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   };
 
   const userRole = currentUser.role;
-  const [view, setView] = useState(() => getDefaultView(userRole));
+  //const [view, setView] = useState(() => getDefaultView(userRole));
+  const [view, setView] = useState("admin_reopen_tool");
   const [notification, setNotification] = useState(null);
 
   const {
@@ -1265,7 +1266,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
         {view === "recurring" && <Recurring {...pageProps} />}
         {view === "onetime" && <OneTime {...pageProps} currentUser={currentUser} />}
         {view === "entitlements" && <Entitlements {...pageProps} />}
-
+    
         {view === "approvals" && <Approvals {...pageProps} />}
         {view === "approvals_onetime" && <ApprovalsOneTime {...pageProps} currentUser={currentUser} />}
         {view === "approvals_recurring" && <ApprovalsRecurring {...pageProps} currentUser={currentUser} />}
