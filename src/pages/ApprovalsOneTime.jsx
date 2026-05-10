@@ -57,8 +57,9 @@ function ApprovalsOneTimeView({
 
   const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
-  const canSeeAll = !!role.canViewAll;
   const isAdmin = userRole === "admin";
+  // Approval page shows only requests that need action from this user. Admin remains full view.
+  const canSeeAll = isAdmin;
   const canManager = !!role.canApproveL1 || userRole === "manager" || isAdmin;
   const canCEO = !!role.canApproveCEO || userRole === "ceo" || isAdmin;
   const canFinance = !!role.canApproveFinance || userRole === "finance" || isAdmin;
@@ -84,17 +85,16 @@ function ApprovalsOneTimeView({
 
     const normalizedLevels = levels
       .map((level, index) => {
-        const userId = typeof level === "string" ? level : level?.userId || level?.id || level?.uid || "";
+        const userId = typeof level === "string" ? level : level?.userId || level?.id || "";
         if (!userId) return null;
         return {
-          level: Number(level?.level || index + 1),
+          level: index + 1,
           userId,
-          userName: level?.userName || level?.name || level?.displayName || "",
-          userEmail: level?.userEmail || level?.email || level?.mail || "",
+          userName: level?.userName || "",
+          userEmail: level?.userEmail || "",
         };
       })
-      .filter(Boolean)
-      .sort((a, b) => Number(a.level || 0) - Number(b.level || 0));
+      .filter(Boolean);
 
     if (normalizedLevels.length > 0) return normalizedLevels;
 
@@ -105,51 +105,20 @@ function ApprovalsOneTimeView({
     return [];
   };
 
-  const getManagerLevelsForItem = (item) => {
-    if (Array.isArray(item?.managerApprovalLevels) && item.managerApprovalLevels.length > 0) {
-      return item.managerApprovalLevels
-        .map((level, index) => ({
-          level: Number(level?.level || index + 1),
-          userId: level?.userId || level?.id || level?.uid || "",
-          userName: level?.userName || level?.name || level?.displayName || "",
-          userEmail: level?.userEmail || level?.email || level?.mail || "",
-        }))
-        .filter((level) => level.userId || level.userEmail)
-        .sort((a, b) => Number(a.level || 0) - Number(b.level || 0));
-    }
+  const userMatches = (value) =>
+    value === currentUser?.id || value === currentUser?.email || value === currentUser?.uid;
 
-    return normalizeManagerApprovers(getDepartmentConfig(item));
-  };
-
-  const userMatches = (value) => {
-    const wanted = String(value || "").trim().toLowerCase();
-    if (!wanted) return false;
-
-    return [currentUser?.id, currentUser?.uid, currentUser?.email, currentUser?.name]
-      .filter(Boolean)
-      .map((v) => String(v).trim().toLowerCase())
-      .includes(wanted);
-  };
-
-  const getCurrentManagerIndex = (item) => {
-    const levels = getManagerLevelsForItem(item);
-    const currentLevelNumber = Number(item?.currentManagerLevel || levels[0]?.level || 1);
-    const foundIndex = levels.findIndex((level) => Number(level.level) === currentLevelNumber);
-    return foundIndex >= 0 ? foundIndex : 0;
-  };
+  const getCurrentManagerIndex = (item) => Math.max(Number(item?.currentManagerLevel || 1) - 1, 0);
 
   const getCurrentManagerLevel = (item) => {
-    const levels = getManagerLevelsForItem(item);
+    const levels = normalizeManagerApprovers(getDepartmentConfig(item));
     return levels[getCurrentManagerIndex(item)] || levels[0] || null;
   };
 
   const canCurrentManagerApprove = (item) => {
     if (isAdmin) return true;
-    if (item?.currentApproverId && userMatches(item.currentApproverId)) return true;
-    if (item?.currentApproverEmail && userMatches(item.currentApproverEmail)) return true;
-
     const level = getCurrentManagerLevel(item);
-    return !!level && (userMatches(level.userId) || userMatches(level.userEmail) || userMatches(level.userName));
+    return !!level && userMatches(level.userId);
   };
 
   const getPendingWithLabel = (item) => {
@@ -221,14 +190,13 @@ function ApprovalsOneTimeView({
     const item = (onetime || []).find((o) => o.id === id);
     if (!item) return;
 
-    const managerLevels = getManagerLevelsForItem(item);
+    const managerLevels = normalizeManagerApprovers(getDepartmentConfig(item));
     const currentIndex = getCurrentManagerIndex(item);
-    const currentLevel = managerLevels[currentIndex] || null;
-    const currentLevelNumber = Number(currentLevel?.level || item.currentManagerLevel || currentIndex + 1);
+    const currentLevelNumber = currentIndex + 1;
     const nextLevel = managerLevels[currentIndex + 1];
     const nextStatus = nextLevel ? "pending_manager" : "pending_ceo";
     const nextNote = nextLevel
-      ? `Manager Level ${currentLevelNumber} approved → Manager Level ${nextLevel.level}`
+      ? `Manager Level ${currentLevelNumber} approved → Manager Level ${currentLevelNumber + 1}`
       : `Manager Level ${currentLevelNumber} approved → CEO`;
 
     setOnetime((p) =>
@@ -264,10 +232,10 @@ function ApprovalsOneTimeView({
     if (nextLevel) {
       addNotif?.(
         "approval_required",
-        `Manager Level ${nextLevel.level} Approval Needed`,
-        `"${item?.title}" needs approval from ${nextLevel.userName || nextLevel.userEmail || nextLevel.userId || "next manager"}`
+        `Manager Level ${currentLevelNumber + 1} Approval Needed`,
+        `"${item?.title}" needs approval from ${nextLevel.userName || nextLevel.userEmail || "next manager"}`
       );
-      showNotif(`Approved → Manager Level ${nextLevel.level}!`);
+      showNotif(`Approved → Manager Level ${currentLevelNumber + 1}!`);
     } else {
       addNotif?.(
         "approval_required",
@@ -1105,8 +1073,9 @@ function ApprovalsOneTimeView({
     );
   };
 
-  const LevelSection = ({
+  const ActionSection = ({
     label,
+    description,
     color,
     items,
     canApprove,
@@ -1115,19 +1084,36 @@ function ApprovalsOneTimeView({
     onRejectFn,
     extra,
   }) => (
-    <div style={{ marginBottom: 20 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
-        <div style={{ fontSize: 13, fontWeight: 700, color }}>{label}</div>
+    <div
+      style={{
+        background: C.card,
+        border: `1px solid ${color}44`,
+        borderLeft: `4px solid ${color}`,
+        borderRadius: 14,
+        padding: "16px 18px",
+        marginBottom: 16,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          gap: 12,
+          marginBottom: 12,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 800, color }}>{label}</div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+            {description}
+          </div>
+        </div>
         <Badge label={String(items.length)} color={color} />
-        {items.length === 0 && <span style={{ fontSize: 12, color: C.green }}>✓ Clear</span>}
       </div>
 
-      {items.length === 0 ? (
-        <div style={{ color: C.muted, fontSize: 13, paddingLeft: 4 }}>
-          No items at this stage
-        </div>
-      ) : (
-        items.map((r) => (
+      <div style={{ display: "grid", gap: 10 }}>
+        {items.map((r) => (
           <RequestCard
             key={r.id}
             r={r}
@@ -1137,41 +1123,45 @@ function ApprovalsOneTimeView({
             onRejectFn={onRejectFn}
             extra={extra}
           />
-        ))
-      )}
+        ))}
+      </div>
     </div>
   );
 
-  const levels = [
+  const actionStages = [
     {
-      label: "LEVEL 1 — MANAGER APPROVALS",
+      label: "Manager Approval",
+      description: "Review requests currently assigned to you as manager.",
       color: C.orange,
       items: queues.pending_manager,
       canApprove: canManager,
       onApprove: approveManager,
-      btnLabel: "✓ Approve → Next Step",
+      btnLabel: "✓ Approve",
       onRejectFn: rejectOneTime,
     },
     {
-      label: "LEVEL 2 — CEO APPROVAL",
+      label: "CEO Approval",
+      description: "Requests waiting for CEO decision.",
       color: "#EC4899",
       items: queues.pending_ceo,
       canApprove: canCEO,
       onApprove: approveCEO,
-      btnLabel: "✓ Approve → Finance",
+      btnLabel: "✓ Approve",
       onRejectFn: rejectOneTime,
     },
     {
-      label: "LEVEL 3 — FINANCE APPROVAL",
+      label: "Finance Approval",
+      description: "Finance review before scheduling the payment.",
       color: C.gold,
       items: queues.pending_finance,
       canApprove: canFinance,
       onApprove: approveFinance,
-      btnLabel: "✓ Approve → Schedule Preparation",
+      btnLabel: "✓ Approve",
       onRejectFn: rejectOneTime,
     },
     {
-      label: "LEVEL 4 — SCHEDULE PREPARATION",
+      label: "Prepare Schedule",
+      description: "Set the approved payment date, method, company, and bank.",
       color: C.purple,
       items: queues.pending_schedule_preparation,
       canApprove: false,
@@ -1190,12 +1180,13 @@ function ApprovalsOneTimeView({
         ),
     },
     {
-      label: "LEVEL 5 — SCHEDULE VERIFIED",
+      label: "Verify Schedule",
+      description: "Confirm or adjust the prepared schedule.",
       color: "#7C3AED",
       items: queues.pending_schedule_verified,
       canApprove: canFinance,
       onApprove: verifySchedule,
-      btnLabel: "✓ Verify Schedule → Release Initiation",
+      btnLabel: "✓ Verify Schedule",
       onRejectFn: null,
       extra: (r) =>
         canFinance && (
@@ -1209,7 +1200,8 @@ function ApprovalsOneTimeView({
         ),
     },
     {
-      label: "LEVEL 6 — RELEASE INITIATION",
+      label: "Initiate Release",
+      description: "Start the payment release process.",
       color: C.accent,
       items: queues.pending_release_initiation,
       canApprove: canFinance,
@@ -1228,12 +1220,13 @@ function ApprovalsOneTimeView({
         ),
     },
     {
-      label: "LEVEL 7 — RELEASE VERIFICATION",
+      label: "Verify Release",
+      description: "Confirm the release before payment.",
       color: "#2563EB",
       items: queues.pending_release_verify,
       canApprove: canFinance,
       onApprove: verifyRelease,
-      btnLabel: "✓ Verify Release → Pending Pay",
+      btnLabel: "✓ Verify Release",
       onRejectFn: null,
       extra: (r) =>
         canFinance && (
@@ -1247,7 +1240,8 @@ function ApprovalsOneTimeView({
         ),
     },
     {
-      label: "LEVEL 8 — PAY + UPLOAD RECEIPT",
+      label: "Pay + Upload Receipt",
+      description: "Complete payment and attach the receipt.",
       color: C.green,
       items: queues.pending_pay,
       canApprove: false,
@@ -1275,7 +1269,8 @@ function ApprovalsOneTimeView({
         ),
     },
     {
-      label: "LEVEL 9 — INVOICE REVIEW & CLOSE",
+      label: "Invoice Review & Close",
+      description: "Review uploaded purchase invoices and close the request.",
       color: "#14B8A6",
       items: queues.pending_invoice_review,
       canApprove: false,
@@ -1288,7 +1283,7 @@ function ApprovalsOneTimeView({
           <button
             className="btn-green"
             onClick={() => reviewInvoiceAndClose(r.id)}
-            style={{ fontSize: 12, padding: "7px 16px" }}
+            style={{ fontSize: 12, padding: "7px 16px", width: "100%" }}
           >
             ✅ Review Invoice & Close
           </button>
@@ -1296,7 +1291,9 @@ function ApprovalsOneTimeView({
     },
   ];
 
-  const totalPending = levels.reduce((sum, level) => sum + level.items.length, 0);
+  const visibleStages = actionStages.filter((stage) => stage.items.length > 0);
+
+  const totalPending = visibleStages.reduce((sum, stage) => sum + stage.items.length, 0);
   const hasNoApprovals = !canSeeAll && !canManager && !canCEO && !canFinance;
 
   return (
@@ -1310,32 +1307,39 @@ function ApprovalsOneTimeView({
             marginBottom: 3,
           }}
         >
-          WORKFLOW
+          ACTIONS
         </div>
-        <div style={{ fontSize: 22, fontWeight: 700 }}>One-Time Approvals</div>
-        <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
-          {canSeeAll
-            ? "Full view — all pending one-time items"
-            : hasNoApprovals
-            ? "Track one-time requests here"
-            : "One-time items in your approval queue"}
+        <div style={{ fontSize: 24, fontWeight: 800 }}>One-Time Approvals</div>
+        <div style={{ fontSize: 13, color: C.muted, marginTop: 5 }}>
+          Only requests waiting for your action are shown here.
         </div>
       </div>
 
       <div
         style={{
           background: C.card,
-          border: `1px solid ${C.orange}55`,
-          borderRadius: 12,
-          padding: "12px 18px",
-          marginBottom: 20,
-          display: "inline-flex",
+          border: `1px solid ${totalPending > 0 ? C.orange + "66" : C.border}`,
+          borderLeft: `4px solid ${totalPending > 0 ? C.orange : C.green}`,
+          borderRadius: 14,
+          padding: "16px 18px",
+          marginBottom: 18,
+          display: "flex",
           alignItems: "center",
-          gap: 10,
+          justifyContent: "space-between",
+          gap: 12,
         }}
       >
-        <div style={{ color: C.orange, fontWeight: 700 }}>General Payments</div>
-        <Badge label={String(totalPending)} color={C.orange} />
+        <div>
+          <div style={{ fontSize: 16, fontWeight: 800 }}>
+            {totalPending > 0 ? "Pending actions" : "No pending actions"}
+          </div>
+          <div style={{ fontSize: 12, color: C.muted, marginTop: 3 }}>
+            {totalPending > 0
+              ? "Review the cards below and take the required action."
+              : "You are clear. Nothing is waiting for your approval right now."}
+          </div>
+        </div>
+        <Badge label={String(totalPending)} color={totalPending > 0 ? C.orange : C.green} />
       </div>
 
       {hasNoApprovals ? (
@@ -1350,14 +1354,32 @@ function ApprovalsOneTimeView({
         >
           <div style={{ fontSize: 32, marginBottom: 12 }}>📋</div>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
-            No one-time approvals for your role
+            No one-time approval access
           </div>
           <div style={{ fontSize: 13, color: C.muted }}>
-            Submit one-time requests and track them here.
+            Your role is not assigned to approve one-time requests.
+          </div>
+        </div>
+      ) : visibleStages.length === 0 ? (
+        <div
+          style={{
+            background: C.card,
+            border: `1px solid ${C.border}`,
+            borderRadius: 14,
+            padding: 40,
+            textAlign: "center",
+          }}
+        >
+          <div style={{ fontSize: 32, marginBottom: 12 }}>✅</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>
+            All clear
+          </div>
+          <div style={{ fontSize: 13, color: C.muted }}>
+            There are no one-time requests waiting for your action.
           </div>
         </div>
       ) : (
-        levels.map((l, i) => <LevelSection key={i} {...l} />)
+        visibleStages.map((stage, i) => <ActionSection key={i} {...stage} />)
       )}
 
       {noteModal && (

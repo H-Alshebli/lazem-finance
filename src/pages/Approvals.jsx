@@ -51,25 +51,18 @@ function Card({ title, desc, color, count, onClick }) {
 }
 
 export default function ApprovalsSelector({
-  onetime,
-  recurring,
-  entitlements,
   setView,
   userRole,
+  oneTimeActionCount = 0,
+  recurringActionCount = 0,
+  entitlementsActionCount = 0,
 }) {
   const isAdmin = userRole === "admin";
 
-  const oneTimeCount = (onetime || []).filter((i) =>
-    String(i.status || "").startsWith("pending")
-  ).length;
-
-  const recurringCount = (recurring || []).filter((i) =>
-    String(i.status || "").startsWith("pending")
-  ).length;
-
-  const entitlementsCount = (entitlements || []).filter((i) =>
-    String(i.status || "").startsWith("pending")
-  ).length;
+  // Counts here must represent only the items the logged-in user can take action on.
+  const oneTimeCount = oneTimeActionCount;
+  const recurringCount = recurringActionCount;
+  const entitlementsCount = entitlementsActionCount;
 
   return (
     <div>
@@ -90,14 +83,14 @@ export default function ApprovalsSelector({
         <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>
           {isAdmin
             ? "Select the approval flow you want to manage."
-            : "First launch is limited to One-Time approvals only."}
+            : "Only approvals waiting for your action are counted here."}
         </div>
       </div>
 
       <div style={{ display: "grid", gap: 14, maxWidth: 820 }}>
         <Card
           title="One-Time Approvals"
-          desc="Manager → CEO → Finance → Schedule → Release → Receipt → Invoice"
+          desc="Requests waiting for your action"
           color={C.orange}
           count={oneTimeCount}
           onClick={() => setView("approvals_onetime")}

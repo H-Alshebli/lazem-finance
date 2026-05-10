@@ -905,89 +905,146 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     (i) => i.priority === "high"
   ).length;
 
-  const myManagedDepts = (deptConfig || [])
-    .filter(
-      (d) =>
-        d.manager === currentUser?.id ||
-        d.manager === currentUser?.email ||
-        d.manager === currentUser?.uid
-    )
-    .map((d) => d.id);
+  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const userMatches = (value) => {
+    if (!value) return false;
 
-  const deptFilter = (item) =>
-    myManagedDepts.length === 0 ||
-    myManagedDepts.includes(item.department) ||
-    item.department === "All Company";
+    if (typeof value === "object") {
+      return (
+        userMatches(value.id) ||
+        userMatches(value.uid) ||
+        userMatches(value.userId) ||
+        userMatches(value.email) ||
+        userMatches(value.mail) ||
+        userMatches(value.userEmail) ||
+        userMatches(value.value) ||
+        userMatches(value.manager) ||
+        userMatches(value.approver) ||
+        userMatches(value.user)
+      );
+    }
 
-  const isCurrentApprover = (item) => {
-    const myValues = [currentUser?.id, currentUser?.uid, currentUser?.email]
-      .filter(Boolean)
-      .map((v) => String(v).trim().toLowerCase());
-
-    const approverValues = [item?.currentApproverId, item?.currentApproverEmail]
-      .filter(Boolean)
-      .map((v) => String(v).trim().toLowerCase());
-
-    return approverValues.some((v) => myValues.includes(v));
+    const v = normalizeText(value);
+    return (
+      v === normalizeText(currentUser?.id) ||
+      v === normalizeText(currentUser?.uid) ||
+      v === normalizeText(currentUser?.email)
+    );
   };
 
-  const roleApprovalCount = (() => {
-    if (userRole === "admin") return totalPendingApproval;
+  const getApprovalDepartment = (item) =>
+    item?.approvalDepartment || item?.department || item?.creatorDepartment || "";
 
-    if (userRole === "manager") {
-      return (
-        (onetime || []).filter((o) => o.status === "pending_manager" && (isCurrentApprover(o) || (!o.currentApproverId && deptFilter(o)))).length +
-        (entitlements || []).filter((e) => e.status === "pending_manager" && deptFilter(e)).length +
-        (recurring || []).filter((r) => r.status === "pending_approval" && deptFilter(r)).length
+  const getDepartmentConfig = (item) =>
+    (deptConfig || []).find(
+      (d) =>
+        normalizeText(d.id) === normalizeText(getApprovalDepartment(item)) ||
+        normalizeText(d.name) === normalizeText(getApprovalDepartment(item))
+    ) || null;
+
+  const extractApproverKeys = (value) => {
+    const keys = [];
+
+    if (Array.isArray(value)) {
+      value.forEach((v) => keys.push(...extractApproverKeys(v)));
+      return keys;
+    }
+
+    if (typeof value === "object" && value !== null) {
+      keys.push(
+        value.id,
+        value.uid,
+        value.userId,
+        value.email,
+        value.mail,
+        value.userEmail,
+        value.value,
+        value.manager,
+        value.approver,
+        value.user
       );
+      return keys.filter(Boolean);
     }
 
-    if (userRole === "ceo") {
-      return (
-        (onetime || []).filter((o) =>
-          ["pending_ceo"].includes(o.status)
-        ).length +
-        (entitlements || []).filter((e) =>
-          ["pending_ceo_1", "pending_ceo_2"].includes(e.status)
-        ).length +
-        (recurring || []).filter((r) =>
-          ["pending_ceo_1_rec", "pending_ceo_2_rec"].includes(r.status)
-        ).length
-      );
+    if (value) keys.push(value);
+    return keys.filter(Boolean);
+  };
+
+  const departmentHasApprover = (department, fields = []) =>
+    fields.some((field) =>
+      extractApproverKeys(department?.[field]).some((key) => userMatches(key))
+    );
+
+  const isCurrentApprover = (item) =>
+    userMatches(item?.currentApproverId) ||
+    userMatches(item?.currentApproverEmail) ||
+    userMatches(item?.currentApproverUid);
+
+  const canActOnManagerRequest = (item) => {
+    if (userRole === "admin") return true;
+    if (item?.status !== "pending_manager") return false;
+
+    if (item?.currentApproverId || item?.currentApproverEmail || item?.currentApproverUid) {
+      return isCurrentApprover(item);
     }
 
-    if (userRole === "finance") {
-      return (
-        (onetime || []).filter((o) =>
-          [
-            "pending_finance",
-            "pending_schedule_preparation",
-            "pending_schedule_verified",
-            "pending_release_initiation",
-            "pending_release_verify",
-            "pending_pay",
-            "pending_invoice_review",
-          ].includes(o.status)
-        ).length +
-        (entitlements || []).filter((e) =>
-          ["pending_finance", "pending_pay"].includes(e.status)
-        ).length +
-        (recurring || []).filter((r) =>
-          ["pending_finance_rec", "pending_pay_rec"].includes(r.status)
-        ).length
-      );
-    }
+    const dept = getDepartmentConfig(item);
+    return departmentHasApprover(dept, [
+      "manager",
+      "managerApprovers",
+      "managers",
+      "managerApprovalLevels",
+      "approvalLevels",
+      "levels",
+    ]);
+  };
 
-    if (userRole === "vp") {
-      return (entitlements || []).filter((e) => e.status === "pending_vp").length;
-    }
+  const canActOnFinanceRequest = (item) => {
+    if (userRole === "admin") return true;
+    const dept = getDepartmentConfig(item);
+    const assignedFinance = departmentHasApprover(dept, [
+      "finance",
+      "financeApprovers",
+      "financeUsers",
+    ]);
 
-    if (userRole === "hr") {
-      return (entitlements || []).filter((e) => e.status === "pending_hr").length;
-    }
+    // If the department has no finance configuration yet, keep the Finance role usable.
+    const hasFinanceConfig = !!(
+      dept?.finance || dept?.financeApprovers || dept?.financeUsers
+    );
 
-    return 0;
+    return assignedFinance || (!hasFinanceConfig && userRole === "finance");
+  };
+
+  const financeStatuses = [
+    "pending_finance",
+    "pending_schedule_preparation",
+    "pending_schedule_verified",
+    "pending_release_initiation",
+    "pending_release_verify",
+    "pending_pay",
+    "pending_invoice_review",
+  ];
+
+  const oneTimeActionCount = (onetime || []).filter((o) => {
+    if (userRole === "admin") return String(o.status || "").startsWith("pending");
+    if (o.status === "pending_manager") return canActOnManagerRequest(o);
+    if (o.status === "pending_ceo") return userRole === "ceo";
+    if (financeStatuses.includes(o.status)) return canActOnFinanceRequest(o);
+    return false;
+  }).length;
+
+  const recurringActionCount = (() => {
+    if (userRole !== "admin") return 0;
+    return (recurring || []).filter((r) => String(r.status || "").startsWith("pending")).length;
   })();
+
+  const entitlementsActionCount = (() => {
+    if (userRole !== "admin") return 0;
+    return (entitlements || []).filter((e) => String(e.status || "").startsWith("pending")).length;
+  })();
+
+  const roleApprovalCount = oneTimeActionCount + recurringActionCount + entitlementsActionCount;
 
   const pageProps = {
     recurring,
@@ -1020,6 +1077,10 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     overdueCount,
     dueThisWeek,
     totalPendingApproval,
+    oneTimeActionCount,
+    recurringActionCount,
+    entitlementsActionCount,
+    roleApprovalCount,
     highPriority,
     setView,
   };
