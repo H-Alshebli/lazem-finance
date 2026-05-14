@@ -145,15 +145,23 @@ export function DataProvider({ children }) {
 
   const isNotificationForMe = (n) => {
     if (!n) return false;
-    if (!n.recipientIds && !n.recipientEmails) return true;
 
     const myId = currentUser?.uid || currentUser?.id;
     const myEmail = String(currentUser?.email || "").toLowerCase();
+    const myRole = String(userProfile?.role || "").toLowerCase();
+
+    const hasRecipientIds = Array.isArray(n.recipientIds) && n.recipientIds.length > 0;
+    const hasRecipientEmails = Array.isArray(n.recipientEmails) && n.recipientEmails.length > 0;
+    const hasTargetRoles = Array.isArray(n.targetRoles) && n.targetRoles.length > 0;
+
+    if (!hasRecipientIds && !hasRecipientEmails && !hasTargetRoles) return true;
 
     return (
-      (Array.isArray(n.recipientIds) && n.recipientIds.includes(myId)) ||
-      (Array.isArray(n.recipientEmails) &&
-        n.recipientEmails.map((e) => String(e).toLowerCase()).includes(myEmail))
+      (hasRecipientIds && n.recipientIds.includes(myId)) ||
+      (hasRecipientEmails &&
+        n.recipientEmails.map((e) => String(e).toLowerCase()).includes(myEmail)) ||
+      (hasTargetRoles &&
+        n.targetRoles.map((r) => String(r).toLowerCase()).includes(myRole))
     );
   };
 
