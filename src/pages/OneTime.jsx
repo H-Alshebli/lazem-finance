@@ -25,6 +25,7 @@ function OnetimeView({
   deptConfig,
   permissions,
   effectivePermissions,
+  authUsers,
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
@@ -38,10 +39,127 @@ function OnetimeView({
   const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
   const isFinance = userRole === "finance" || userRole === "admin" || !!role.canApproveFinance || !!role.canPay;
-  const isAdmin = userRole === "admin";
-  // One-Time Requests page is personal for all non-admin users, including CEO and Finance.
-  // Approval work is handled inside the Approvals pages.
-  const canSeeAll = isAdmin;
+  const isAdmin = userRole === "admin" || userRole === "sub_admin";
+  // One-Time Requests page now keeps every pipeline participant able to track the request.
+  // Admin/Sub Admin can still see everything.
+  const canSeeAll = isAdmin || !!role.canViewAll;
+  const authUserList = Object.values(authUsers || {});
+
+  const normalizeText = (value) => String(value || "").trim().toLowerCase();
+  const currentUserKeys = [
+    currentUser?.uid,
+    currentUser?.id,
+    currentUser?.email,
+    username,
+  ].filter(Boolean).map(normalizeText);
+
+  const userMatches = (value) => {
+    if (!value) return false;
+    if (typeof value === "object") {
+      return userMatches(value.userId) || userMatches(value.id) || userMatches(value.uid) ||
+        userMatches(value.email) || userMatches(value.userEmail) || userMatches(value.value);
+    }
+    return currentUserKeys.includes(normalizeText(value));
+  };
+
+  const findAuthUser = (key) => {
+    const normalized = normalizeText(key);
+    if (!normalized) return null;
+    return authUserList.find((u) =>
+      [u.id, u.uid, u.email, u.userId].filter(Boolean).map(normalizeText).includes(normalized)
+    );
+  };
+
+  const getApprovalDepartment = (item) => item?.approvalDepartment || item?.department || item?.creatorDepartment || "";
+
+  const getDepartmentConfig = (itemOrDepartment) => {
+    const departmentName = typeof itemOrDepartment === "string" ? itemOrDepartment : getApprovalDepartment(itemOrDepartment);
+    return (deptConfig || []).find((d) =>
+      normalizeText(d.id) === normalizeText(departmentName) || normalizeText(d.name) === normalizeText(departmentName)
+    ) || null;
+  };
+
+  const normalizeManagerApprovers = (department) => {
+    const levels = Array.isArray(department?.managerApprovers) ? department.managerApprovers : [];
+    const normalized = levels.map((level, index) => {
+      const rawId = typeof level === "string" ? level : level?.userId || level?.id || level?.uid || level?.email || "";
+      if (!rawId) return null;
+      const user = findAuthUser(rawId);
+      return {
+        level: index + 1,
+        userId: user?.id || user?.uid || rawId,
+        userEmail: user?.email || level?.userEmail || level?.email || "",
+        userName: user?.name || level?.userName || level?.name || "",
+      };
+    }).filter(Boolean);
+
+    if (normalized.length) return normalized;
+    if (department?.manager) {
+      const user = findAuthUser(department.manager);
+      return [{
+        level: 1,
+        userId: user?.id || user?.uid || department.manager,
+        userEmail: user?.email || "",
+        userName: user?.name || "",
+      }];
+    }
+    return [];
+  };
+
+  const getRequesterManagerIndex = (department) => {
+    const levels = normalizeManagerApprovers(department);
+    return levels.findIndex((level) => userMatches(level.userId) || userMatches(level.userEmail));
+  };
+
+  const buildInitialApprovalRouting = (approvalDepartment) => {
+    const department = getDepartmentConfig(approvalDepartment);
+    const levels = normalizeManagerApprovers(department);
+    const requesterIndex = getRequesterManagerIndex(department);
+    const nextIndex = requesterIndex >= 0 ? requesterIndex + 1 : 0;
+    const nextLevel = levels[nextIndex];
+
+    if (nextLevel) {
+      return {
+        status: "pending_manager",
+        currentManagerLevel: nextIndex + 1,
+        currentApproverId: nextLevel.userId || "",
+        currentApproverEmail: nextLevel.userEmail || "",
+        currentApproverName: nextLevel.userName || nextLevel.userEmail || `Manager Level ${nextIndex + 1}`,
+        currentApproverRole: `Manager Level ${nextIndex + 1}`,
+        initialRouteNote: requesterIndex >= 0
+          ? `Requester is Manager Level ${requesterIndex + 1}; routed to Manager Level ${nextIndex + 1}`
+          : `Routed to Manager Level ${nextIndex + 1}`,
+      };
+    }
+
+    return {
+      status: "pending_ceo",
+      currentManagerLevel: levels.length || 0,
+      currentApproverId: "ceo",
+      currentApproverEmail: "",
+      currentApproverName: "CEO",
+      currentApproverRole: "CEO",
+      initialRouteNote: requesterIndex >= 0
+        ? `Requester is final manager level; routed directly to CEO`
+        : `No manager approver configured; routed directly to CEO`,
+    };
+  };
+
+  const isRequestInMyTrack = (item) => {
+    if (canSeeAll) return true;
+    if (userMatches(item.submittedById) || userMatches(item.submittedByEmail) || userMatches(item.submittedBy)) return true;
+
+    const department = getDepartmentConfig(item);
+    const managerLevels = normalizeManagerApprovers(department);
+    if (managerLevels.some((level) => userMatches(level.userId) || userMatches(level.userEmail))) return true;
+
+    if ((userRole === "ceo" || role.canApproveCEO) && ["pending_ceo", "pending_finance", "pending_schedule_preparation", "pending_schedule_verified", "pending_release_initiation", "pending_release_verify", "pending_pay", "pending_invoice_upload", "pending_invoice_review", "closed_paid", "rejected"].includes(item.status)) return true;
+
+    const financeKeys = Array.isArray(department?.finance) ? department.finance : department?.finance ? [department.finance] : [];
+    if ((isFinance || role.canApproveFinance) && (financeKeys.length === 0 || financeKeys.some(userMatches))) return true;
+
+    return false;
+  };
 
   const resolveUserDepartments = () => {
     const uidOrId = currentUser?.uid || currentUser?.id;
@@ -99,14 +217,7 @@ function OnetimeView({
     invoices: [],
   });
 
-  const myRequests = canSeeAll
-    ? onetime || []
-    : (onetime || []).filter(
-        (o) =>
-          o.submittedBy === username ||
-          o.submittedById === currentUser?.uid ||
-          o.submittedById === currentUser?.id
-      );
+  const myRequests = (onetime || []).filter(isRequestInMyTrack);
 
   const statusTabs = [
     ["all", "All"],
@@ -128,6 +239,77 @@ function OnetimeView({
     filterStatus === "all"
       ? myRequests
       : myRequests.filter((o) => o.status === filterStatus);
+
+  const escapeHtml = (value = "") =>
+    String(value)
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;")
+      .replaceAll("'", "&#039;");
+
+  const downloadRequestCyclePDF = (r) => {
+    const rows = (r.history || [])
+      .map((h, index) => `
+        <tr>
+          <td>${index + 1}</td>
+          <td>${escapeHtml(fmtDate(h.date))}</td>
+          <td>${escapeHtml(h.by || "-")}</td>
+          <td>${escapeHtml(statusConfig[h.status]?.label || h.status || "-")}</td>
+          <td>${escapeHtml(h.note || "-")}</td>
+        </tr>
+      `)
+      .join("");
+
+    const html = `
+      <!doctype html>
+      <html>
+        <head>
+          <title>Request Cycle - ${escapeHtml(r.title)}</title>
+          <style>
+            body { font-family: Arial, sans-serif; padding: 28px; color: #111827; }
+            h1 { margin: 0 0 6px; font-size: 22px; }
+            .muted { color: #6b7280; font-size: 12px; margin-bottom: 18px; }
+            .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 18px; }
+            .box { border: 1px solid #e5e7eb; border-radius: 10px; padding: 10px 12px; }
+            .label { color: #6b7280; font-size: 11px; text-transform: uppercase; margin-bottom: 4px; }
+            .value { font-size: 13px; font-weight: 700; }
+            table { width: 100%; border-collapse: collapse; margin-top: 12px; }
+            th, td { border: 1px solid #e5e7eb; padding: 8px; font-size: 11px; text-align: left; vertical-align: top; }
+            th { background: #f3f4f6; font-size: 10px; text-transform: uppercase; color: #374151; }
+            @media print { button { display: none; } body { padding: 12px; } }
+          </style>
+        </head>
+        <body>
+          <h1>Lazem Finance Request Cycle</h1>
+          <div class="muted">Generated on ${escapeHtml(fmtDate(today()))}</div>
+          <div class="grid">
+            <div class="box"><div class="label">Request</div><div class="value">${escapeHtml(r.title)}</div></div>
+            <div class="box"><div class="label">Status</div><div class="value">${escapeHtml(statusConfig[r.status]?.label || r.status)}</div></div>
+            <div class="box"><div class="label">Amount</div><div class="value">${escapeHtml(r.currency || "SAR")} ${escapeHtml(fmtAmt(r.amount))}</div></div>
+            <div class="box"><div class="label">Submitted By</div><div class="value">${escapeHtml(r.submittedBy || "-")}</div></div>
+            <div class="box"><div class="label">Requested For</div><div class="value">${escapeHtml(r.department || "-")}</div></div>
+            <div class="box"><div class="label">Approval Flow</div><div class="value">${escapeHtml(r.approvalDepartment || "-")}</div></div>
+          </div>
+          ${r.rejectionReason ? `<div class="box" style="border-color:#fecaca;background:#fef2f2;margin-bottom:16px"><div class="label">Rejected Comment</div><div class="value">${escapeHtml(r.rejectionReason)}</div></div>` : ""}
+          <h2 style="font-size:16px;margin-top:18px">Cycle History</h2>
+          <table>
+            <thead><tr><th>#</th><th>Date</th><th>By</th><th>Status</th><th>Note / Comment</th></tr></thead>
+            <tbody>${rows || `<tr><td colspan="5">No history recorded.</td></tr>`}</tbody>
+          </table>
+          <script>window.onload = () => { window.print(); };</script>
+        </body>
+      </html>
+    `;
+
+    const win = window.open("", "_blank");
+    if (!win) {
+      showNotif("Please allow popups to download/print the request cycle", "error");
+      return;
+    }
+    win.document.write(html);
+    win.document.close();
+  };
 
   const resetForm = () => {
     setForm(buildInitialForm());
@@ -222,6 +404,8 @@ function OnetimeView({
       ? "IT"
       : creatorDepartment || form.department || "";
 
+    const routing = buildInitialApprovalRouting(approvalDepartment);
+
     const newItem = {
       ...form,
       id: uid(),
@@ -234,13 +418,18 @@ function OnetimeView({
       submittedByEmail: currentUser?.email || "",
       requestDate: today(),
       requestedPaymentDate: form.dueDate,
-      status: "pending_manager",
+      status: routing.status,
+      currentManagerLevel: routing.currentManagerLevel,
+      currentApproverId: routing.currentApproverId,
+      currentApproverEmail: routing.currentApproverEmail,
+      currentApproverName: routing.currentApproverName,
+      currentApproverRole: routing.currentApproverRole,
       history: [
         {
-          status: "pending_manager",
+          status: routing.status,
           by: username,
           date: today(),
-          note: `Request submitted with quotations · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
+          note: `Request submitted with quotations · Requested for ${targetDepartment} · Approval flow ${approvalDepartment} · ${routing.initialRouteNote}`,
         },
       ],
       managerApproval: null,
@@ -272,11 +461,11 @@ function OnetimeView({
       addNotif(
         "new_submission",
         `New Request: ${newItem.title}`,
-        `Submitted by ${username} — awaiting Manager approval`
+        `Submitted by ${username} — ${routing.currentApproverRole} action required`
       );
     }
 
-    showNotif("Request submitted for Manager approval!");
+    showNotif(`Request submitted → ${routing.currentApproverRole}!`);
   };
 
   const saveNote = () => {
@@ -1064,6 +1253,23 @@ function OnetimeView({
                     >
                       📝 Add Note
                     </button>
+
+                    {(isFinance || isAdmin) && (
+                      <button
+                        onClick={() => downloadRequestCyclePDF(r)}
+                        style={{
+                          fontSize: 11,
+                          padding: "5px 12px",
+                          background: C.subtle,
+                          border: `1px solid ${C.border}`,
+                          borderRadius: 8,
+                          color: C.green,
+                          cursor: "pointer",
+                        }}
+                      >
+                        ⬇ Download Cycle PDF
+                      </button>
+                    )}
 
                     {canEditRequest(r) && (
                       <button

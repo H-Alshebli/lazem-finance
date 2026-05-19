@@ -982,7 +982,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     userMatches(item?.currentApproverUid);
 
   const canActOnManagerRequest = (item) => {
-    if (userRole === "admin") return true;
+    if (userRole === "admin" || userRole === "sub_admin") return true;
     if (item?.status !== "pending_manager") return false;
 
     if (item?.currentApproverId || item?.currentApproverEmail || item?.currentApproverUid) {
@@ -1001,7 +1001,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   };
 
   const canActOnFinanceRequest = (item) => {
-    if (userRole === "admin") return true;
+    if (userRole === "admin" || userRole === "sub_admin") return true;
     const dept = getDepartmentConfig(item);
     const assignedFinance = departmentHasApprover(dept, [
       "finance",
@@ -1028,7 +1028,7 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   ];
 
   const oneTimeActionCount = (onetime || []).filter((o) => {
-    if (userRole === "admin") return String(o.status || "").startsWith("pending");
+    if (userRole === "admin" || userRole === "sub_admin") return String(o.status || "").startsWith("pending");
     if (o.status === "pending_manager") return canActOnManagerRequest(o);
     if (o.status === "pending_ceo") return userRole === "ceo";
     if (financeStatuses.includes(o.status)) return canActOnFinanceRequest(o);
@@ -1036,12 +1036,12 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
   }).length;
 
   const recurringActionCount = (() => {
-    if (userRole !== "admin") return 0;
+    if (userRole !== "admin" && userRole !== "sub_admin") return 0;
     return (recurring || []).filter((r) => String(r.status || "").startsWith("pending")).length;
   })();
 
   const entitlementsActionCount = (() => {
-    if (userRole !== "admin") return 0;
+    if (userRole !== "admin" && userRole !== "sub_admin") return 0;
     return (entitlements || []).filter((e) => String(e.status || "").startsWith("pending")).length;
   })();
 

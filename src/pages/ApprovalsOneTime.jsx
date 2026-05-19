@@ -57,7 +57,7 @@ function ApprovalsOneTimeView({
 
   const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
-  const isAdmin = userRole === "admin";
+  const isAdmin = userRole === "admin" || userRole === "sub_admin";
   // Approval page shows only requests that need action from this user. Admin remains full view.
   const canSeeAll = isAdmin;
   const canManager = !!role.canApproveL1 || userRole === "manager" || isAdmin;
@@ -540,9 +540,14 @@ function ApprovalsOneTimeView({
       p.map((o) =>
         o.id === id
           ? addHistory(
-              { ...o, rejectionReason: rejectReason },
+              {
+                ...o,
+                rejectionReason: rejectReason,
+                rejectedBy: currentUser?.name || "Approver",
+                rejectedAt: today(),
+              },
               "rejected",
-              `Rejected: ${rejectReason}`
+              `❌ Rejected by ${currentUser?.name || "Approver"}: ${rejectReason}`
             )
           : o
       )
