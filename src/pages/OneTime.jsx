@@ -1224,7 +1224,9 @@ function OnetimeView({
                             {fmtDate(h.date)}
                           </span>
                           <span style={{ color: C.accent }}>{h.by}</span>
-                          <span style={{ color: C.text }}>{h.note}</span>
+                          <span style={{ color: C.text }}>
+  {h.note || h.comment || h.reason || h.rejectionReason || "-"}
+</span>
                         </div>
                       ))}
                     </div>

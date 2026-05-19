@@ -533,32 +533,44 @@ function ApprovalsOneTimeView({
     showNotif("Note added!");
   };
 
-  const rejectOneTime = (id) => {
-    const item = (onetime || []).find((o) => o.id === id);
+const rejectOneTime = (id) => {
+  const item = (onetime || []).find((o) => o.id === id);
+  const reason = String(rejectReason || "").trim();
 
-    setOnetime((p) =>
-      p.map((o) =>
-        o.id === id
-          ? addHistory(
-              {
-                ...o,
-                rejectionReason: rejectReason,
-                rejectedBy: currentUser?.name || "Approver",
-                rejectedAt: today(),
-              },
-              "rejected",
-              `❌ Rejected by ${currentUser?.name || "Approver"}: ${rejectReason}`
-            )
-          : o
-      )
-    );
+  if (!reason) {
+    showNotif("Please write the rejection reason before rejecting.", "error");
+    return;
+  }
 
-    setRejectModal(null);
-    setRejectReason("");
-    logAction?.("reject", "one-time", id, item?.title, `Reason: ${rejectReason}`);
-    addNotif?.("rejected", "Request Rejected", `"${item?.title}" was rejected`);
-    showNotif("Rejected.");
-  };
+  const rejectedBy = currentUser?.name || currentUser?.email || "Approver";
+
+  setOnetime((p) =>
+    p.map((o) =>
+      o.id === id
+        ? addHistory(
+            {
+              ...o,
+              rejectionReason: reason,
+              rejectedReason: reason,
+              rejectedComment: reason,
+              rejectedBy,
+              rejectedByEmail: currentUser?.email || "",
+              rejectedAt: today(),
+            },
+            "rejected",
+            `❌ Rejected by ${rejectedBy}: ${reason}`
+          )
+        : o
+    )
+  );
+
+  setRejectModal(null);
+  setRejectReason("");
+
+  logAction?.("reject", "one-time", id, item?.title, `Reason: ${reason}`);
+  addNotif?.("rejected", "Request Rejected", `"${item?.title}" was rejected: ${reason}`);
+  showNotif("Rejected.");
+};
 
   const openPayModal = (id) => {
     setBankModal({ id });
@@ -993,7 +1005,9 @@ function ApprovalsOneTimeView({
                   >
                     <span style={{ color: C.muted }}>{fmtDate(h.date)}</span>
                     <span style={{ color: C.accent }}>{h.by}</span>
-                    <span style={{ color: C.text }}>{h.note}</span>
+                    <span style={{ color: C.text }}>
+  {h.note || h.comment || h.reason || h.rejectionReason || "-"}
+</span>
                   </div>
                 ))}
               </div>
