@@ -4,6 +4,7 @@ export const DEPARTMENTS = [
   "All Company",
   "EMS",
   "Sales",
+  "Commercial",
   "HR",
   "IT",
   "Operations",
