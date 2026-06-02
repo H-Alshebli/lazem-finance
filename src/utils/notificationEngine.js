@@ -462,21 +462,21 @@ export function getRecipientsForStatus({
   status,
   allUsers = [],
   deptConfig = [],
-  includePipeline = true,
+  includeRequester = true,
 }) {
   const responsible = responsibleRecipientsForStatus(item, status, allUsers, deptConfig);
-  const pipeline = includePipeline
-    ? getPipelineRecipients({ item, allUsers, deptConfig })
-    : [];
+  const requester = includeRequester ? requesterUser(item, allUsers) : null;
 
-  const finalUsers = uniqueUsers([...responsible, ...pipeline]).filter((u) =>
+  // New routing rule: notify only the next responsible person plus the requester.
+  // This prevents every previous approver / full pipeline member from receiving each movement email.
+  const finalUsers = uniqueUsers([...responsible, requester]).filter((u) =>
     normalizeEmail(getUserEmail(u))
   );
 
   console.log("Final notification recipients:", {
     status,
     responsibleEmails: responsible.map((u) => getUserEmail(u)).filter(Boolean),
-    pipelineEmails: pipeline.map((u) => getUserEmail(u)).filter(Boolean),
+    requesterEmail: requester ? getUserEmail(requester) : "",
     finalEmails: finalUsers.map((u) => getUserEmail(u)).filter(Boolean),
   });
 
@@ -494,7 +494,7 @@ export function getNoteRecipients({
     status: item?.status,
     allUsers,
     deptConfig,
-    includePipeline: true,
+    includeRequester: true,
   }).filter((u) => {
     const email = normalizeEmail(getUserEmail(u));
     return email && email !== normalizeEmail(actorEmail);

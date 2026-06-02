@@ -35,6 +35,8 @@ function OnetimeView({
   const [invoiceModal, setInvoiceModal] = useState(null);
   const [invoiceFiles, setInvoiceFiles] = useState([]);
   const [editModal, setEditModal] = useState(null);
+  const [exceptionModal, setExceptionModal] = useState(null);
+  const [exceptionReason, setExceptionReason] = useState("");
 
   const baseRole = ROLE_CONFIG[userRole] || ROLE_CONFIG.staff;
   const role = { ...baseRole, ...(effectivePermissions || permissions?.[userRole] || {}) };
@@ -74,7 +76,55 @@ function OnetimeView({
 
   const getDepartmentConfig = (itemOrDepartment) => {
     const departmentName = typeof itemOrDepartment === "string" ? itemOrDepartment : getApprovalDepartment(itemOrDepartment);
-    return (deptConfig || []).find((d) =>
+    const submitInvoiceExceptionRequest = () => {
+    if (!exceptionModal?.requests?.length) return;
+
+    if (!exceptionReason.trim()) {
+      showNotif("Please write the reason for the exception request", "error");
+      return;
+    }
+
+    const requestIds = exceptionModal.requests.map((r) => r.id);
+
+    setOnetime((p) =>
+      p.map((o) =>
+        requestIds.includes(o.id)
+          ? {
+              ...o,
+              invoiceException: {
+                status: "pending",
+                reason: exceptionReason.trim(),
+                requestedAt: today(),
+                requestedBy: username,
+                requestedById: currentUser?.uid || currentUser?.id || "",
+                requestedByEmail: currentUser?.email || "",
+              },
+              history: [
+                ...(o.history || []),
+                {
+                  status: o.status,
+                  by: username,
+                  date: today(),
+                  note: `⚠️ Invoice exception requested: ${exceptionReason.trim()}`,
+                },
+              ],
+            }
+          : o
+      )
+    );
+
+    addNotif?.(
+      "approval_required",
+      "Invoice Exception Requested",
+      `${username} requested Finance Manager approval to create a new request before uploading the purchase invoice.`
+    );
+
+    setExceptionModal(null);
+    setExceptionReason("");
+    showNotif("Exception request sent to Finance Manager.");
+  };
+
+  return (deptConfig || []).find((d) =>
       normalizeText(d.id) === normalizeText(departmentName) || normalizeText(d.name) === normalizeText(departmentName)
     ) || null;
   };
@@ -239,6 +289,31 @@ function OnetimeView({
     filterStatus === "all"
       ? myRequests
       : myRequests.filter((o) => o.status === filterStatus);
+
+  const isMySubmittedRequest = (r) =>
+    r?.submittedBy === username ||
+    r?.submittedById === currentUser?.uid ||
+    r?.submittedById === currentUser?.id ||
+    r?.submittedByEmail === currentUser?.email;
+
+  const isMissingRequiredPurchaseInvoice = (r) =>
+    isMySubmittedRequest(r) &&
+    ["pending_invoice_upload", "closed_paid"].includes(r?.status) &&
+    (!Array.isArray(r.purchaseInvoices) || r.purchaseInvoices.length === 0) &&
+    r.invoiceException?.status !== "approved";
+
+  const invoiceBlockedRequests = (onetime || []).filter(isMissingRequiredPurchaseInvoice);
+  const hasInvoiceBlock = invoiceBlockedRequests.length > 0;
+
+  const openNewRequest = () => {
+    if (hasInvoiceBlock) {
+      setExceptionModal({ requests: invoiceBlockedRequests });
+      setExceptionReason("");
+      return;
+    }
+
+    setShowAdd(true);
+  };
 
   const escapeHtml = (value = "") =>
     String(value)
@@ -692,11 +767,29 @@ function OnetimeView({
         </div>
 
         {role.canSubmit && (
-          <button className="btn-primary" onClick={() => setShowAdd(true)}>
+          <button className="btn-primary" onClick={openNewRequest}>
             + New Request
           </button>
         )}
       </div>
+
+      {hasInvoiceBlock && (
+        <div
+          style={{
+            background: C.red + "10",
+            border: `1px solid ${C.red}33`,
+            borderRadius: 12,
+            padding: "12px 14px",
+            marginBottom: 14,
+            color: C.red,
+            fontSize: 12,
+          }}
+        >
+          🔒 New requests are locked until you upload the purchase invoice for
+          {" "}{invoiceBlockedRequests.length} paid request
+          {invoiceBlockedRequests.length !== 1 ? "s" : ""}. You can upload the invoice or request a Finance Manager exception.
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
         {statusTabs.map(([v, l]) => {
@@ -1331,6 +1424,79 @@ function OnetimeView({
           );
         })}
       </div>
+
+      {exceptionModal && (
+        <div className="overlay" onClick={() => setExceptionModal(null)}>
+          <div
+            className="modal"
+            style={{ maxWidth: 560 }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4, color: C.red }}>
+              🔒 Invoice Required Before New Request
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 14 }}>
+              You have paid request(s) waiting for the final purchase invoice. Upload the invoice first, or request an exception from Finance Manager.
+            </div>
+
+            <div style={{ display: "grid", gap: 8, marginBottom: 14 }}>
+              {(exceptionModal.requests || []).map((r) => (
+                <div
+                  key={r.id}
+                  style={{
+                    border: `1px solid ${C.border}`,
+                    background: C.subtle,
+                    borderRadius: 10,
+                    padding: "9px 11px",
+                    fontSize: 12,
+                  }}
+                >
+                  <div style={{ fontWeight: 700, color: C.text }}>{r.title}</div>
+                  <div style={{ color: C.muted }}>
+                    {r.currency || "SAR"} {fmtAmt(r.amount)} · Status: {statusConfig[r.status]?.label || r.status}
+                  </div>
+                  {r.invoiceException?.status === "pending" && (
+                    <div style={{ color: C.gold, marginTop: 4 }}>
+                      Existing exception request is pending Finance Manager review.
+                    </div>
+                  )}
+                  <button
+                    className="btn-green"
+                    onClick={() => {
+                      setInvoiceModal(r.id);
+                      setInvoiceFiles([]);
+                      setExceptionModal(null);
+                    }}
+                    style={{ fontSize: 12, padding: "7px 12px", marginTop: 8 }}
+                  >
+                    ⬆ Upload Invoice Now
+                  </button>
+                </div>
+              ))}
+            </div>
+
+            <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+              EXCEPTION REASON *
+            </label>
+            <textarea
+              className="inp"
+              rows={4}
+              value={exceptionReason}
+              onChange={(e) => setExceptionReason(e.target.value)}
+              placeholder="Explain why you cannot upload the purchase invoice now..."
+            />
+
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <button className="btn-primary" onClick={submitInvoiceExceptionRequest} style={{ flex: 1 }}>
+                Send Exception Request
+              </button>
+              <button className="btn-ghost" onClick={() => setExceptionModal(null)}>
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showAdd && (
         <div className="overlay" onClick={() => setShowAdd(false)}>

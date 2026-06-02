@@ -181,6 +181,9 @@ function ApprovalsOneTimeView({
     pending_pay: filterFinance(
       (onetime || []).filter((o) => o.status === "pending_pay")
     ),
+    pending_invoice_upload: filterFinance(
+      (onetime || []).filter((o) => o.status === "pending_invoice_upload")
+    ),
     pending_invoice_review: filterFinance(
       (onetime || []).filter((o) => o.status === "pending_invoice_review")
     ),
@@ -632,6 +635,90 @@ const rejectOneTime = (id) => {
     );
 
     showNotif("Paid and receipt uploaded → Awaiting invoice upload!");
+  };
+
+  const missingPurchaseInvoice = (r) =>
+    !Array.isArray(r?.purchaseInvoices) || r.purchaseInvoices.length === 0;
+
+  const sendInvoiceReminder = (id) => {
+    const item = (onetime || []).find((o) => o.id === id);
+    if (!item) return;
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              invoiceReminder: {
+                lastSentAt: today(),
+                sentBy: currentUser?.name || "Finance",
+                count: Number(o.invoiceReminder?.count || 0) + 1,
+              },
+              history: [
+                ...(o.history || []),
+                {
+                  status: o.status,
+                  by: currentUser?.name || "Finance",
+                  date: today(),
+                  note: "🔔 Finance reminder sent: please upload the final purchase invoice.",
+                },
+              ],
+            }
+          : o
+      )
+    );
+
+    addNotif?.(
+      "approval_required",
+      "Invoice Upload Reminder",
+      `Finance sent a reminder to upload the purchase invoice for "${item.title}".`
+    );
+    showNotif("Invoice reminder sent to requester.");
+  };
+
+  const reviewInvoiceException = (id, approved) => {
+    const item = (onetime || []).find((o) => o.id === id);
+    if (!item) return;
+
+    const statusText = approved ? "approved" : "rejected";
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? {
+              ...o,
+              invoiceException: {
+                ...(o.invoiceException || {}),
+                status: statusText,
+                reviewedAt: today(),
+                reviewedBy: currentUser?.name || "Finance",
+                reviewedById: currentUser?.id || currentUser?.uid || "",
+              },
+              history: [
+                ...(o.history || []),
+                {
+                  status: o.status,
+                  by: currentUser?.name || "Finance",
+                  date: today(),
+                  note: approved
+                    ? "✅ Finance approved invoice exception — requester can create a new request."
+                    : "❌ Finance rejected invoice exception — requester must upload the purchase invoice first.",
+                },
+              ],
+            }
+          : o
+      )
+    );
+
+    logAction?.(
+      approved ? "approve" : "reject",
+      "invoice-exception",
+      id,
+      item?.title,
+      approved ? "Invoice exception approved" : "Invoice exception rejected"
+    );
+
+    showNotif(approved ? "Invoice exception approved." : "Invoice exception rejected.");
   };
 
   const reviewInvoiceAndClose = (id) => {
@@ -1285,6 +1372,71 @@ const rejectOneTime = (id) => {
               💰 Pay + Upload Receipt
             </button>
           </>
+        ),
+    },
+    {
+      label: "Employee Invoice / Exception",
+      description: "Track paid requests waiting for employee purchase invoice, send reminders, or approve exception requests.",
+      color: "#14B8A6",
+      items: queues.pending_invoice_upload,
+      canApprove: false,
+      onApprove: null,
+      btnLabel: "",
+      onRejectFn: null,
+      extra: (r) =>
+        canFinance && (
+          <div style={{ display: "grid", gap: 6 }}>
+            {missingPurchaseInvoice(r) && (
+              <button
+                className="btn-primary"
+                onClick={() => sendInvoiceReminder(r.id)}
+                style={{ fontSize: 12, padding: "7px 16px", width: "100%" }}
+              >
+                🔔 Send Invoice Reminder
+              </button>
+            )}
+
+            {r.invoiceException?.status === "pending" && (
+              <div
+                style={{
+                  background: C.gold + "12",
+                  border: `1px solid ${C.gold}33`,
+                  borderRadius: 8,
+                  padding: 8,
+                  fontSize: 11,
+                  color: C.gold,
+                }}
+              >
+                <div style={{ fontWeight: 700, marginBottom: 4 }}>Exception requested</div>
+                <div style={{ color: C.text }}>{r.invoiceException.reason}</div>
+              </div>
+            )}
+
+            {r.invoiceException?.status === "pending" && (
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
+                <button
+                  className="btn-green"
+                  onClick={() => reviewInvoiceException(r.id, true)}
+                  style={{ fontSize: 12, padding: "7px 10px", width: "100%" }}
+                >
+                  ✅ Approve Exception
+                </button>
+                <button
+                  className="tab-btn"
+                  onClick={() => reviewInvoiceException(r.id, false)}
+                  style={{ fontSize: 12, padding: "7px 10px", width: "100%" }}
+                >
+                  ❌ Reject Exception
+                </button>
+              </div>
+            )}
+
+            {r.invoiceException?.status === "approved" && (
+              <div style={{ fontSize: 11, color: C.green }}>
+                ✅ Exception approved — requester can create a new request.
+              </div>
+            )}
+          </div>
         ),
     },
     {
