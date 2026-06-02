@@ -74,9 +74,7 @@ function OnetimeView({
 
   const getApprovalDepartment = (item) => item?.approvalDepartment || item?.department || item?.creatorDepartment || "";
 
-  const getDepartmentConfig = (itemOrDepartment) => {
-    const departmentName = typeof itemOrDepartment === "string" ? itemOrDepartment : getApprovalDepartment(itemOrDepartment);
-    const submitInvoiceExceptionRequest = () => {
+  const submitInvoiceExceptionRequest = () => {
     if (!exceptionModal?.requests?.length) return;
 
     if (!exceptionReason.trim()) {
@@ -124,7 +122,10 @@ function OnetimeView({
     showNotif("Exception request sent to Finance Manager.");
   };
 
-  return (deptConfig || []).find((d) =>
+  const getDepartmentConfig = (itemOrDepartment) => {
+    const departmentName = typeof itemOrDepartment === "string" ? itemOrDepartment : getApprovalDepartment(itemOrDepartment);
+
+    return (deptConfig || []).find((d) =>
       normalizeText(d.id) === normalizeText(departmentName) || normalizeText(d.name) === normalizeText(departmentName)
     ) || null;
   };
