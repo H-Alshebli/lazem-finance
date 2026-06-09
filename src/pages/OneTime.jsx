@@ -1072,6 +1072,62 @@ function OnetimeView({
                     </div>
                   )}
 
+                  {r.invoices?.length > 0 && (
+                    <div
+                      style={{
+                        fontSize: 11,
+                        color: C.accent,
+                        marginBottom: 8,
+                        display: "flex",
+                        gap: 6,
+                        flexWrap: "wrap",
+                        alignItems: "center",
+                      }}
+                    >
+                      <span>📎 Quotations:</span>
+                      {r.invoices.map((f) => {
+                        const fileUrl = f.downloadUrl || f.dataUrl;
+
+                        return fileUrl ? (
+                          <a
+                            key={f.id || f.name}
+                            href={fileUrl}
+                            download={f.name}
+                            target="_blank"
+                            rel="noreferrer"
+                            onClick={(e) => e.stopPropagation()}
+                            style={{
+                              background: C.accent + "12",
+                              border: `1px solid ${C.accent}33`,
+                              borderRadius: 5,
+                              padding: "2px 8px",
+                              color: C.accent,
+                              textDecoration: "none",
+                              position: "relative",
+                              zIndex: 5,
+                              pointerEvents: "auto",
+                            }}
+                          >
+                            ⬇ {f.name}
+                          </a>
+                        ) : (
+                          <span
+                            key={f.id || f.name}
+                            style={{
+                              background: C.accent + "12",
+                              border: `1px solid ${C.accent}33`,
+                              borderRadius: 5,
+                              padding: "2px 8px",
+                              color: C.muted,
+                            }}
+                          >
+                            📄 {f.name}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  )}
+
                   {r.receiptUploaded?.files?.length > 0 && (
                     <div
                       style={{
