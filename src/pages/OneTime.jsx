@@ -297,11 +297,25 @@ function OnetimeView({
     r?.submittedById === currentUser?.id ||
     r?.submittedByEmail === currentUser?.email;
 
-  const isMissingRequiredPurchaseInvoice = (r) =>
-    isMySubmittedRequest(r) &&
-    ["pending_invoice_upload", "closed_paid"].includes(r?.status) &&
-    (!Array.isArray(r.purchaseInvoices) || r.purchaseInvoices.length === 0) &&
-    r.invoiceException?.status !== "approved";
+const isInvoiceExceptionApproved = (r) =>
+  String(r?.invoiceException?.status || "").toLowerCase() === "approved";
+
+const isMissingRequiredPurchaseInvoice = (r) => {
+  const isRequesterRequest = isMySubmittedRequest(r);
+
+  const isWaitingForInvoice =
+    String(r?.status || "").toLowerCase() === "pending_invoice_upload";
+
+  const hasNoPurchaseInvoice =
+    !Array.isArray(r?.purchaseInvoices) || r.purchaseInvoices.length === 0;
+
+  return (
+    isRequesterRequest &&
+    isWaitingForInvoice &&
+    hasNoPurchaseInvoice &&
+    !isInvoiceExceptionApproved(r)
+  );
+};
 
   const invoiceBlockedRequests = (onetime || []).filter(isMissingRequiredPurchaseInvoice);
   const hasInvoiceBlock = invoiceBlockedRequests.length > 0;
