@@ -51,6 +51,9 @@ const SEED_USERS = {
   "staff@lazem.sa": { id: "u5", name: "Ahmed Al-Zahrani", email: "staff@lazem.sa", password: "staff123", role: "staff", avatar: "A" },
   "vp@lazem.sa": { id: "u6", name: "Khalid Al-Rashidi", email: "vp@lazem.sa", password: "vp123", role: "vp", avatar: "K" },
   "hr@lazem.sa": { id: "u7", name: "Nora Al-Shammari", email: "hr@lazem.sa", password: "hr123", role: "hr", avatar: "N" },
+  "hr.finance@lazem.sa": { id: "u8", name: "HR Finance", email: "hr.finance@lazem.sa", password: "hr123", role: "hr_finance", avatar: "H" },
+  "hr.manager1@lazem.sa": { id: "u9", name: "HR Manager 1", email: "hr.manager1@lazem.sa", password: "hr123", role: "hr_manager_1", avatar: "H" },
+  "hr.manager2@lazem.sa": { id: "u10", name: "HR Manager 2", email: "hr.manager2@lazem.sa", password: "hr123", role: "hr_manager_2", avatar: "H" },
 };
 
 export function AuthGate({ children }) {
@@ -1000,6 +1003,29 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
     ]);
   };
 
+  const getHRDepartmentConfig = () =>
+    (deptConfig || []).find((d) => normalizeText(d.id || d.name) === "hr") || null;
+
+  const canActOnHRDepartmentLevel = (item, levelIndex) => {
+    if (userRole === "admin" || userRole === "sub_admin") return true;
+    const flowType = String(
+      item?.requestFlowType || item?.approvalFlowType || item?.flowType || item?.requestType || "normal"
+    ).toLowerCase();
+    if (!(flowType === "hr" || flowType === "hr_related" || flowType === "hr-related")) return false;
+
+    const expectedStatus = levelIndex === 0 ? "pending_hr_manager_1" : "pending_hr_manager_2";
+    if (item?.status !== expectedStatus) return false;
+
+    if (item?.currentApproverId || item?.currentApproverEmail || item?.currentApproverUid) {
+      return isCurrentApprover(item);
+    }
+
+    const levels = Array.isArray(getHRDepartmentConfig()?.managerApprovers)
+      ? getHRDepartmentConfig().managerApprovers
+      : [];
+    return extractApproverKeys(levels[levelIndex]).some((key) => userMatches(key));
+  };
+
   const canActOnFinanceRequest = (item) => {
     if (userRole === "admin" || userRole === "sub_admin") return true;
     const dept = getDepartmentConfig(item);
@@ -1019,19 +1045,31 @@ function AppInner({ currentUser, logout, authUsers, setAuthUsers, shared }) {
 
   const financeStatuses = [
     "pending_finance",
-    "pending_schedule_preparation",
     "pending_schedule_verified",
-    "pending_release_initiation",
     "pending_release_verify",
-    "pending_pay",
     "pending_invoice_review",
+  ];
+  const financeExecutionStatuses = [
+    "pending_schedule_preparation",
+    "pending_release_initiation",
+    "pending_pay",
   ];
 
   const oneTimeActionCount = (onetime || []).filter((o) => {
+    const flowType = String(
+      o.requestFlowType || o.approvalFlowType || o.flowType || o.requestType || "normal"
+    ).toLowerCase();
+    const isHr = flowType === "hr" || flowType === "hr_related" || flowType === "hr-related";
     if (userRole === "admin" || userRole === "sub_admin") return String(o.status || "").startsWith("pending");
     if (o.status === "pending_manager") return canActOnManagerRequest(o);
+    if (o.status === "pending_hr_finance") return userRole === "hr_finance" && isHr;
+    if (o.status === "pending_hr_manager_1") return canActOnHRDepartmentLevel(o, 0);
+    if (o.status === "pending_hr_manager_2") return canActOnHRDepartmentLevel(o, 1);
     if (o.status === "pending_ceo") return userRole === "ceo";
     if (financeStatuses.includes(o.status)) return canActOnFinanceRequest(o);
+    if (financeExecutionStatuses.includes(o.status)) {
+      return isHr ? userRole === "hr_finance" : canActOnFinanceRequest(o);
+    }
     return false;
   }).length;
 

@@ -7,6 +7,8 @@ import {
   statusConfig,
   priorityConfig,
   GENERAL_STEPS,
+  HR_RELATED_STEPS,
+  HR_REQUEST_TYPES,
 } from "../utils/constants";
 import { uid, daysUntil, fmtDate, fmtAmt, today } from "../utils/helpers";
 import Badge from "../components/Badge";
@@ -28,6 +30,7 @@ function OnetimeView({
   authUsers,
 }) {
   const [showAdd, setShowAdd] = useState(false);
+  const [showRequestTypeModal, setShowRequestTypeModal] = useState(false);
   const [filterStatus, setFilterStatus] = useState("all");
   const [expandedId, setExpandedId] = useState(null);
   const [noteModal, setNoteModal] = useState(null);
@@ -73,6 +76,14 @@ function OnetimeView({
   };
 
   const getApprovalDepartment = (item) => item?.approvalDepartment || item?.department || item?.creatorDepartment || "";
+  const getRequestFlowType = (item) => String(
+    item?.requestFlowType ||
+      item?.approvalFlowType ||
+      item?.flowType ||
+      item?.requestType ||
+      "normal"
+  ).toLowerCase();
+  const isHrRequest = (item) => getRequestFlowType(item) === "hr" || getRequestFlowType(item) === "hr_related" || getRequestFlowType(item) === "hr-related";
 
   const submitInvoiceExceptionRequest = () => {
     if (!exceptionModal?.requests?.length) return;
@@ -130,6 +141,9 @@ function OnetimeView({
     ) || null;
   };
 
+  const getHRDepartmentConfig = () =>
+    (deptConfig || []).find((d) => normalizeText(d.id || d.name) === "hr") || null;
+
   const normalizeManagerApprovers = (department) => {
     const levels = Array.isArray(department?.managerApprovers) ? department.managerApprovers : [];
     const normalized = levels.map((level, index) => {
@@ -162,7 +176,14 @@ function OnetimeView({
     return levels.findIndex((level) => userMatches(level.userId) || userMatches(level.userEmail));
   };
 
-  const buildInitialApprovalRouting = (approvalDepartment) => {
+  const getHRApprovalLevels = () => normalizeManagerApprovers(getHRDepartmentConfig());
+  const isHRDepartmentApprover = (item) => {
+    if (!isHrRequest(item)) return false;
+    const levels = getHRApprovalLevels();
+    return levels.some((level) => userMatches(level.userId) || userMatches(level.userEmail));
+  };
+
+  const buildInitialApprovalRouting = (approvalDepartment, requestFlowType = "normal") => {
     const department = getDepartmentConfig(approvalDepartment);
     const levels = normalizeManagerApprovers(department);
     const requesterIndex = getRequesterManagerIndex(department);
@@ -183,6 +204,20 @@ function OnetimeView({
       };
     }
 
+    if (requestFlowType === "hr") {
+      return {
+        status: "pending_hr_finance",
+        currentManagerLevel: levels.length || 0,
+        currentApproverId: "hr_finance",
+        currentApproverEmail: "",
+        currentApproverName: "HR Finance",
+        currentApproverRole: "HR Finance",
+        initialRouteNote: requesterIndex >= 0
+          ? `Requester is final manager level; HR-related request routed to HR Finance`
+          : `No manager approver configured; HR-related request routed to HR Finance`,
+      };
+    }
+
     return {
       status: "pending_ceo",
       currentManagerLevel: levels.length || 0,
@@ -197,6 +232,25 @@ function OnetimeView({
   };
 
   const isRequestInMyTrack = (item) => {
+    if (userRole === "hr_finance") return isHrRequest(item);
+    if (isHRDepartmentApprover(item)) {
+      return [
+        "pending_hr_manager_1",
+        "pending_hr_manager_2",
+        "pending_ceo",
+        "pending_finance",
+        "pending_schedule_preparation",
+        "pending_schedule_verified",
+        "pending_release_initiation",
+        "pending_release_verify",
+        "pending_pay",
+        "pending_invoice_upload",
+        "pending_invoice_review",
+        "closed_paid",
+        "rejected",
+      ].includes(item.status);
+    }
+
     if (canSeeAll) return true;
     if (userMatches(item.submittedById) || userMatches(item.submittedByEmail) || userMatches(item.submittedBy)) return true;
 
@@ -207,7 +261,10 @@ function OnetimeView({
     if ((userRole === "ceo" || role.canApproveCEO) && ["pending_ceo", "pending_finance", "pending_schedule_preparation", "pending_schedule_verified", "pending_release_initiation", "pending_release_verify", "pending_pay", "pending_invoice_upload", "pending_invoice_review", "closed_paid", "rejected"].includes(item.status)) return true;
 
     const financeKeys = Array.isArray(department?.finance) ? department.finance : department?.finance ? [department.finance] : [];
-    if ((isFinance || role.canApproveFinance) && (financeKeys.length === 0 || financeKeys.some(userMatches))) return true;
+    if ((isFinance || role.canApproveFinance) && (financeKeys.length === 0 || financeKeys.some(userMatches))) {
+      if (!isHrRequest(item)) return true;
+      return ["pending_finance", "pending_schedule_verified", "pending_release_verify", "pending_invoice_review", "closed_paid", "rejected"].includes(item.status);
+    }
 
     return false;
   };
@@ -250,6 +307,11 @@ function OnetimeView({
     dueDate: "",
     notes: "",
     invoices: [],
+    requestFlowType: "normal",
+    hrRequestType: HR_REQUEST_TYPES[0] || "Salary",
+    employeeName: "",
+    employeeId: "",
+    hrPeriod: "",
   });
 
   const [form, setForm] = useState(buildInitialForm);
@@ -266,6 +328,11 @@ function OnetimeView({
     dueDate: "",
     notes: "",
     invoices: [],
+    requestFlowType: "normal",
+    hrRequestType: HR_REQUEST_TYPES[0] || "Salary",
+    employeeName: "",
+    employeeId: "",
+    hrPeriod: "",
   });
 
   const myRequests = (onetime || []).filter(isRequestInMyTrack);
@@ -327,6 +394,16 @@ const isMissingRequiredPurchaseInvoice = (r) => {
       return;
     }
 
+    setShowRequestTypeModal(true);
+  };
+
+  const startNewRequest = (requestFlowType) => {
+    setForm({
+      ...buildInitialForm(),
+      requestFlowType,
+      category: requestFlowType === "hr" ? "Other" : "Equipment",
+    });
+    setShowRequestTypeModal(false);
     setShowAdd(true);
   };
 
@@ -379,7 +456,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
             <div class="box"><div class="label">Amount</div><div class="value">${escapeHtml(r.currency || "SAR")} ${escapeHtml(fmtAmt(r.amount))}</div></div>
             <div class="box"><div class="label">Submitted By</div><div class="value">${escapeHtml(r.submittedBy || "-")}</div></div>
             <div class="box"><div class="label">Requested For</div><div class="value">${escapeHtml(r.department || "-")}</div></div>
-            <div class="box"><div class="label">Approval Flow</div><div class="value">${escapeHtml(r.approvalDepartment || "-")}</div></div>
+            <div class="box"><div class="label">Approval Flow</div><div class="value">${escapeHtml(r.approvalFlowLabel || (isHrRequest(r) ? "HR-Related" : r.approvalDepartment || "-"))}</div></div>
           </div>
           ${r.rejectionReason ? `<div class="box" style="border-color:#fecaca;background:#fef2f2;margin-bottom:16px"><div class="label">Rejected Comment</div><div class="value">${escapeHtml(r.rejectionReason)}</div></div>` : ""}
           <h2 style="font-size:16px;margin-top:18px">Cycle History</h2>
@@ -462,6 +539,11 @@ const isMissingRequiredPurchaseInvoice = (r) => {
       return false;
     }
 
+    if (data.requestFlowType === "hr" && !data.employeeName?.trim()) {
+      showNotif("Employee name is required for HR-related requests", "error");
+      return false;
+    }
+
     if (!Array.isArray(data.invoices) || data.invoices.length === 0) {
       showNotif(
         isEdit
@@ -490,14 +572,23 @@ const isMissingRequiredPurchaseInvoice = (r) => {
       ? form.department
       : creatorDepartment || form.department || "";
 
+    const requestFlowType = form.requestFlowType === "hr" ? "hr" : "normal";
+
+    // Important: the popup selection decides the workflow.
+    // The requested-for department can still be IT/Operations/etc. for the direct-manager step.
     const approvalDepartment = isITRequester
       ? "IT"
       : creatorDepartment || form.department || "";
 
-    const routing = buildInitialApprovalRouting(approvalDepartment);
+    const routing = buildInitialApprovalRouting(approvalDepartment, requestFlowType);
 
     const newItem = {
       ...form,
+      requestFlowType,
+      approvalFlowType: requestFlowType,
+      flowType: requestFlowType,
+      requestType: requestFlowType === "hr" ? "hr" : "normal",
+      approvalFlowLabel: requestFlowType === "hr" ? "HR-Related" : approvalDepartment,
       id: uid(),
       amount: +form.amount,
       department: targetDepartment,
@@ -519,7 +610,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
           status: routing.status,
           by: username,
           date: today(),
-          note: `Request submitted with quotations · Requested for ${targetDepartment} · Approval flow ${approvalDepartment} · ${routing.initialRouteNote}`,
+          note: `Request submitted with quotations · ${requestFlowType === "hr" ? "HR-related request" : "Normal request"} · Requested for ${targetDepartment} · Approval flow ${requestFlowType === "hr" ? "HR-Related" : approvalDepartment} · ${routing.initialRouteNote}`,
         },
       ],
       managerApproval: null,
@@ -534,6 +625,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
 
     setOnetime((p) => [newItem, ...(p || [])]);
     setShowAdd(false);
+    setShowRequestTypeModal(false);
     resetForm();
 
     if (logAction) {
@@ -542,7 +634,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
         "one-time",
         newItem.id,
         newItem.title,
-        `${newItem.category} · Requested For ${newItem.department} · Approval Flow ${newItem.approvalDepartment}`,
+        `${newItem.category} · Requested For ${newItem.department} · Approval Flow ${newItem.approvalFlowLabel || newItem.approvalDepartment}`,
         +newItem.amount
       );
     }
@@ -640,6 +732,11 @@ const isMissingRequiredPurchaseInvoice = (r) => {
       dueDate: r.requestedPaymentDate || r.dueDate || "",
       notes: r.notes || "",
       invoices: Array.isArray(r.invoices) ? r.invoices : [],
+      requestFlowType: r.requestFlowType || "normal",
+      hrRequestType: r.hrRequestType || HR_REQUEST_TYPES[0] || "Salary",
+      employeeName: r.employeeName || "",
+      employeeId: r.employeeId || "",
+      hrPeriod: r.hrPeriod || "",
     });
     setEditModal(r.id);
   };
@@ -672,13 +769,18 @@ const isMissingRequiredPurchaseInvoice = (r) => {
               requestedPaymentDate: editForm.dueDate,
               notes: editForm.notes,
               invoices: editForm.invoices,
+              requestFlowType: editForm.requestFlowType || "normal",
+              hrRequestType: editForm.hrRequestType || "",
+              employeeName: editForm.employeeName || "",
+              employeeId: editForm.employeeId || "",
+              hrPeriod: editForm.hrPeriod || "",
               history: [
                 ...(o.history || []),
                 {
                   status: o.status,
                   by: username,
                   date: today(),
-                  note: `Request updated by requester/admin · Requested for ${targetDepartment} · Approval flow ${approvalDepartment}`,
+                  note: `Request updated by requester/admin · Requested for ${targetDepartment} · Approval flow ${editForm.requestFlowType === "hr" ? "HR-Related" : approvalDepartment}`,
                 },
               ],
             }
@@ -692,7 +794,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
         "one-time",
         editModal,
         editForm.title,
-        `Request details updated · Requested For ${targetDepartment} · Approval Flow ${approvalDepartment}`
+        `Request details updated · Requested For ${targetDepartment} · Approval Flow ${editForm.requestFlowType === "hr" ? "HR-Related" : approvalDepartment}`
       );
     }
 
@@ -879,7 +981,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
             !hasUploadedPurchaseInvoice;
 
           const requestedFor = r.department || "-";
-          const approvalFlow = r.approvalDepartment || r.department || "-";
+          const approvalFlow = r.approvalFlowLabel || (isHrRequest(r) ? "HR-Related" : r.approvalDepartment || r.department || "-");
 
           return (
             <div
@@ -898,7 +1000,7 @@ const isMissingRequiredPurchaseInvoice = (r) => {
                 borderLeft: `4px solid ${showPurchaseInvoiceUpload ? "#14B8A6" : sc.color}`,
               }}
             >
-              <WorkflowTimeline status={r.status} steps={GENERAL_STEPS} />
+              <WorkflowTimeline status={r.status} steps={isHrRequest(r) ? HR_RELATED_STEPS : GENERAL_STEPS} />
 
               <div style={{ display: "flex", alignItems: "flex-start", gap: 16 }}>
                 <div style={{ flex: 1 }}>
@@ -1569,6 +1671,44 @@ const isMissingRequiredPurchaseInvoice = (r) => {
         </div>
       )}
 
+      {showRequestTypeModal && (
+        <div className="overlay" onClick={() => setShowRequestTypeModal(false)}>
+          <div className="modal" style={{ maxWidth: 560 }} onClick={(e) => e.stopPropagation()}>
+            <div style={{ fontSize: 18, fontWeight: 800, marginBottom: 4 }}>
+              Select Request Type
+            </div>
+            <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
+              Choose the correct workflow before creating the request.
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+              <button
+                className="btn-primary"
+                onClick={() => startNewRequest("normal")}
+                style={{ padding: 16, textAlign: "left", minHeight: 110 }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 800 }}>Normal Request</div>
+                <div style={{ fontSize: 12, opacity: 0.85, marginTop: 6 }}>
+                  Supplier, purchase, project, operations, and general finance requests.
+                </div>
+              </button>
+              <button
+                className="btn-green"
+                onClick={() => startNewRequest("hr")}
+                style={{ padding: 16, textAlign: "left", minHeight: 110 }}
+              >
+                <div style={{ fontSize: 16, fontWeight: 800 }}>HR-Related Request</div>
+                <div style={{ fontSize: 12, opacity: 0.9, marginTop: 6 }}>
+                  Salary, allowance, employee reimbursement, GOSI, recruitment, and HR payments.
+                </div>
+              </button>
+            </div>
+            <button className="btn-ghost" onClick={() => setShowRequestTypeModal(false)} style={{ marginTop: 14, width: "100%" }}>
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
       {showAdd && (
         <div className="overlay" onClick={() => setShowAdd(false)}>
           <div
@@ -1577,11 +1717,12 @@ const isMissingRequiredPurchaseInvoice = (r) => {
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 4 }}>
-              New One-Time Request
+              {form.requestFlowType === "hr" ? "New HR-Related Request" : "New One-Time Request"}
             </div>
             <div style={{ fontSize: 12, color: C.muted, marginBottom: 20 }}>
-              Create a one-time request with mandatory note, requested payment date,
-              and quotation attachment.
+              {form.requestFlowType === "hr"
+                ? "This request will follow: Staff → Manager → HR Finance → HR Department Level 1 → HR Department Level 2 → CEO → Finance Manager → Finance cycle."
+                : "Create a one-time request with mandatory note, requested payment date, and quotation attachment."}
             </div>
 
             <div style={{ display: "grid", gap: 12 }}>
@@ -1701,6 +1842,58 @@ const isMissingRequiredPurchaseInvoice = (r) => {
                   onChange={(e) => setForm({ ...form, dueDate: e.target.value })}
                 />
               </div>
+
+              {form.requestFlowType === "hr" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      HR REQUEST TYPE *
+                    </label>
+                    <select
+                      className="inp"
+                      value={form.hrRequestType}
+                      onChange={(e) => setForm({ ...form, hrRequestType: e.target.value })}
+                    >
+                      {HR_REQUEST_TYPES.map((t) => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      EMPLOYEE NAME *
+                    </label>
+                    <input
+                      className="inp"
+                      value={form.employeeName}
+                      onChange={(e) => setForm({ ...form, employeeName: e.target.value })}
+                      placeholder="Employee name"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      EMPLOYEE ID
+                    </label>
+                    <input
+                      className="inp"
+                      value={form.employeeId}
+                      onChange={(e) => setForm({ ...form, employeeId: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      PERIOD / MONTH
+                    </label>
+                    <input
+                      className="inp"
+                      value={form.hrPeriod}
+                      onChange={(e) => setForm({ ...form, hrPeriod: e.target.value })}
+                      placeholder="e.g. June 2026"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
@@ -1867,6 +2060,58 @@ const isMissingRequiredPurchaseInvoice = (r) => {
                   onChange={(e) => setEditForm({ ...editForm, dueDate: e.target.value })}
                 />
               </div>
+
+              {editForm.requestFlowType === "hr" && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      HR REQUEST TYPE *
+                    </label>
+                    <select
+                      className="inp"
+                      value={editForm.hrRequestType}
+                      onChange={(e) => setEditForm({ ...editForm, hrRequestType: e.target.value })}
+                    >
+                      {HR_REQUEST_TYPES.map((t) => (
+                        <option key={t}>{t}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      EMPLOYEE NAME *
+                    </label>
+                    <input
+                      className="inp"
+                      value={editForm.employeeName}
+                      onChange={(e) => setEditForm({ ...editForm, employeeName: e.target.value })}
+                      placeholder="Employee name"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      EMPLOYEE ID
+                    </label>
+                    <input
+                      className="inp"
+                      value={editForm.employeeId}
+                      onChange={(e) => setEditForm({ ...editForm, employeeId: e.target.value })}
+                      placeholder="Optional"
+                    />
+                  </div>
+                  <div>
+                    <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>
+                      PERIOD / MONTH
+                    </label>
+                    <input
+                      className="inp"
+                      value={editForm.hrPeriod}
+                      onChange={(e) => setEditForm({ ...editForm, hrPeriod: e.target.value })}
+                      placeholder="e.g. June 2026"
+                    />
+                  </div>
+                </div>
+              )}
 
               <div>
                 <label style={{ fontSize: 11, color: C.muted, display: "block", marginBottom: 5 }}>

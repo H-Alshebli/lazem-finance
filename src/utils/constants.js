@@ -77,6 +77,21 @@ export const ROLE_CONFIG = {
     canPay: false,
     canViewAll: false,
   },
+
+  hr_finance: {
+    label: "HR Finance",
+    color: "#06B6D4",
+    pages: ["dashboard", "onetime", "approvals", "approvals_onetime"],
+    canApprove: [
+      "pending_hr_finance",
+      "pending_schedule_preparation",
+      "pending_release_initiation",
+      "pending_pay",
+    ],
+    canSubmit: true,
+    canPay: true,
+    canViewAll: false,
+  },
   ceo: {
     label: "CEO",
     color: "#EC4899",
@@ -144,6 +159,9 @@ export const ROLE_CONFIG = {
       "pending_approval",
       "pending_vp",
       "pending_hr",
+      "pending_hr_finance",
+      "pending_hr_manager_1",
+      "pending_hr_manager_2",
       "pending_ceo",
       "pending_ceo_1",
       "pending_ceo_2",
@@ -188,6 +206,9 @@ export const ROLE_CONFIG = {
       "pending_approval",
       "pending_vp",
       "pending_hr",
+      "pending_hr_finance",
+      "pending_hr_manager_1",
+      "pending_hr_manager_2",
       "pending_ceo",
       "pending_ceo_1",
       "pending_ceo_2",
@@ -275,6 +296,20 @@ export const DEFAULT_PERMISSIONS = {
     canPay: false,
     canViewAll: false,
     canExport: false,
+    canManageUsers: false,
+  },
+
+  hr_finance: {
+    pages: ["dashboard", "onetime", "approvals", "approvals_onetime"],
+    canSubmit: true,
+    canApproveL1: false,
+    canApproveVP: false,
+    canApproveHR: true,
+    canApproveCEO: false,
+    canApproveFinance: false,
+    canPay: true,
+    canViewAll: false,
+    canExport: true,
     canManageUsers: false,
   },
   ceo: {
@@ -400,6 +435,9 @@ export const statusConfig = {
   pending_approval: { label: "Pending Approval", color: "#F97316" },
   pending_manager: { label: "Pending Manager", color: "#F97316" },
   pending_ceo: { label: "Pending CEO", color: "#EC4899" },
+  pending_hr_finance: { label: "Pending HR Finance", color: "#06B6D4" },
+  pending_hr_manager_1: { label: "Pending HR Level 1", color: "#A78BFA" },
+  pending_hr_manager_2: { label: "Pending HR Level 2", color: "#7C3AED" },
   pending_ceo_1: { label: "Pending CEO", color: "#EC4899" },
   pending_finance: { label: "Pending Finance", color: "#F59E0B" },
   pending_ceo_2: { label: "Pending CEO – Release", color: "#EC4899" },
@@ -489,6 +527,43 @@ export const GENERAL_STEPS = [
   { key: "pending_invoice_review", label: "Invoice Review", color: "#0EA5E9" },
   { key: "closed_paid", label: "Closed", color: "#10B981" },
 ];
+
+export const HR_RELATED_STEPS = [
+  { key: "pending_manager", label: "Manager", color: "#F97316" },
+  { key: "pending_hr_finance", label: "HR Finance", color: "#06B6D4" },
+  { key: "pending_hr_manager_1", label: "HR Level 1", color: "#A78BFA" },
+  { key: "pending_hr_manager_2", label: "HR Level 2", color: "#7C3AED" },
+  { key: "pending_ceo", label: "CEO Approval", color: "#EC4899" },
+  { key: "pending_finance", label: "Finance Manager Approval", color: "#F59E0B" },
+  { key: "pending_schedule_preparation", label: "Schedule Preparation", color: "#8B5CF6" },
+  { key: "pending_schedule_verified", label: "Schedule Verified", color: "#7C3AED" },
+  { key: "pending_release_initiation", label: "Release Initiation", color: "#3B82F6" },
+  { key: "pending_release_verify", label: "Release Verification", color: "#2563EB" },
+  { key: "pending_pay", label: "Pay + Receipt", color: "#10B981" },
+  { key: "pending_invoice_upload", label: "Invoice Upload", color: "#14B8A6" },
+  { key: "pending_invoice_review", label: "Invoice Review", color: "#0EA5E9" },
+  { key: "closed_paid", label: "Closed", color: "#10B981" },
+];
+
+export const HR_FINANCE_ACTION_STATUSES = [
+  "pending_hr_finance",
+  "pending_schedule_preparation",
+  "pending_release_initiation",
+  "pending_pay",
+  "pending_invoice_upload",
+];
+
+export const HR_REQUEST_TYPES = [
+  "Salary",
+  "Allowance",
+  "Employee Reimbursement",
+  "GOSI",
+  "Recruitment Cost",
+  "Government Fee",
+  "Insurance",
+  "Other HR Payment",
+];
+
 
 export const ENTITLEMENT_STEPS = [
   { key: "pending_manager", label: "Manager" },

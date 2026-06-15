@@ -209,6 +209,8 @@ export function DataProvider({ children }) {
       };
     }
 
+    clean.requestFlowType = clean.requestFlowType === "hr" ? "hr" : "normal";
+
     Object.keys(clean).forEach((k) => {
       if (clean[k] === undefined) delete clean[k];
     });

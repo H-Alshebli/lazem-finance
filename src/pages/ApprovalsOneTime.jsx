@@ -63,6 +63,18 @@ function ApprovalsOneTimeView({
   const canManager = !!role.canApproveL1 || userRole === "manager" || isAdmin;
   const canCEO = !!role.canApproveCEO || userRole === "ceo" || isAdmin;
   const canFinance = !!role.canApproveFinance || userRole === "finance" || isAdmin;
+  const canHRFinance = userRole === "hr_finance" || isAdmin;
+  // HR Level 1 / Level 2 are NOT fixed roles.
+  // They are selected in Departments → HR → Manager Approval Levels.
+  const getRequestFlowType = (item) => String(
+    item?.requestFlowType ||
+      item?.approvalFlowType ||
+      item?.flowType ||
+      item?.requestType ||
+      "normal"
+  ).toLowerCase();
+  const isHrRequest = (item) => getRequestFlowType(item) === "hr" || getRequestFlowType(item) === "hr_related" || getRequestFlowType(item) === "hr-related";
+  const isNormalRequest = (item) => !isHrRequest(item);
 
   const getApprovalDepartment = (item) =>
     item.approvalDepartment || item.department || "";
@@ -71,6 +83,9 @@ function ApprovalsOneTimeView({
     (deptConfig || []).find(
       (d) => d.id === getApprovalDepartment(item) || d.name === getApprovalDepartment(item)
     ) || null;
+
+  const getHRDepartmentConfig = () =>
+    (deptConfig || []).find((d) => String(d.id || d.name || "").toLowerCase() === "hr") || null;
 
   const normalizeFinanceApprovers = (value) => {
     if (Array.isArray(value)) return value.filter(Boolean);
@@ -115,6 +130,23 @@ function ApprovalsOneTimeView({
     return levels[getCurrentManagerIndex(item)] || levels[0] || null;
   };
 
+  const getHRApprovalLevels = () => normalizeManagerApprovers(getHRDepartmentConfig());
+  const getHRApprovalLevel = (index) => getHRApprovalLevels()[index] || null;
+  const userIsCurrentApprover = (item) =>
+    isAdmin ||
+    userMatches(item?.currentApproverId) ||
+    userMatches(item?.currentApproverEmail);
+
+  const canHRLevelApprove = (item, levelIndex) => {
+    if (isAdmin) return true;
+    const level = getHRApprovalLevel(levelIndex);
+    return (
+      isHrRequest(item) &&
+      item?.status === (levelIndex === 0 ? "pending_hr_manager_1" : "pending_hr_manager_2") &&
+      (userIsCurrentApprover(item) || !!level && userMatches(level.userId))
+    );
+  };
+
   const canCurrentManagerApprove = (item) => {
     if (isAdmin) return true;
     const level = getCurrentManagerLevel(item);
@@ -128,8 +160,19 @@ function ApprovalsOneTimeView({
       const name = level?.userName || level?.userEmail || level?.userId || "Manager";
       return `Pending Manager Level ${levelNumber} Approval - ${name}`;
     }
+    if (item.status === "pending_hr_finance") return "Pending HR Finance Review";
+    if (item.status === "pending_hr_manager_1") {
+      const level = getHRApprovalLevel(0);
+      const name = item.currentApproverName || level?.userName || level?.userEmail || "HR Level 1";
+      return `Pending HR Level 1 Approval - ${name}`;
+    }
+    if (item.status === "pending_hr_manager_2") {
+      const level = getHRApprovalLevel(1);
+      const name = item.currentApproverName || level?.userName || level?.userEmail || "HR Level 2";
+      return `Pending HR Level 2 Approval - ${name}`;
+    }
     if (item.status === "pending_ceo") return "Pending CEO Approval";
-    if (item.status === "pending_finance") return "Pending Finance Approval";
+    if (item.status === "pending_finance") return "Pending Finance Manager Approval";
     return null;
   };
 
@@ -141,6 +184,14 @@ function ApprovalsOneTimeView({
   const financeDeptFilter = (item) => isAdmin || myFinanceDepts.includes(getApprovalDepartment(item));
   const filterMgr = (items) => (canManager ? items.filter(managerDeptFilter) : []);
   const filterFinance = (items) => (canFinance ? items.filter(financeDeptFilter) : []);
+  const filterHRFinance = (items) => (canHRFinance ? items.filter(isHrRequest) : []);
+  const filterHRLevel1 = (items) => items.filter((item) => canHRLevelApprove(item, 0));
+  const filterHRLevel2 = (items) => items.filter((item) => canHRLevelApprove(item, 1));
+  const filterFinanceOrHRExecution = (items, hrHandled = false) => {
+    const normalItems = filterFinance(items.filter(isNormalRequest));
+    const hrItems = hrHandled ? filterHRFinance(items.filter(isHrRequest)) : filterFinance(items.filter(isHrRequest));
+    return [...normalItems, ...hrItems];
+  };
 
   const addHistory = (item, status, note) => ({
     ...item,
@@ -160,32 +211,48 @@ function ApprovalsOneTimeView({
     pending_manager: filterMgr(
       (onetime || []).filter((o) => o.status === "pending_manager")
     ),
+    pending_hr_finance: filterHRFinance(
+      (onetime || []).filter((o) => o.status === "pending_hr_finance")
+    ),
+    pending_hr_manager_1: filterHRLevel1(
+      (onetime || []).filter((o) => o.status === "pending_hr_manager_1")
+    ),
+    pending_hr_manager_2: filterHRLevel2(
+      (onetime || []).filter((o) => o.status === "pending_hr_manager_2")
+    ),
     pending_ceo: canCEO
       ? (onetime || []).filter((o) => o.status === "pending_ceo")
       : [],
     pending_finance: filterFinance(
       (onetime || []).filter((o) => o.status === "pending_finance")
     ),
-    pending_schedule_preparation: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_schedule_preparation")
+    pending_schedule_preparation: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_schedule_preparation"),
+      true
     ),
-    pending_schedule_verified: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_schedule_verified")
+    pending_schedule_verified: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_schedule_verified"),
+      false
     ),
-    pending_release_initiation: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_release_initiation")
+    pending_release_initiation: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_release_initiation"),
+      true
     ),
-    pending_release_verify: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_release_verify")
+    pending_release_verify: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_release_verify"),
+      false
     ),
-    pending_pay: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_pay")
+    pending_pay: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_pay"),
+      true
     ),
-    pending_invoice_upload: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_invoice_upload")
+    pending_invoice_upload: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_invoice_upload"),
+      true
     ),
-    pending_invoice_review: filterFinance(
-      (onetime || []).filter((o) => o.status === "pending_invoice_review")
+    pending_invoice_review: filterFinanceOrHRExecution(
+      (onetime || []).filter((o) => o.status === "pending_invoice_review"),
+      false
     ),
   };
 
@@ -197,9 +264,11 @@ function ApprovalsOneTimeView({
     const currentIndex = getCurrentManagerIndex(item);
     const currentLevelNumber = currentIndex + 1;
     const nextLevel = managerLevels[currentIndex + 1];
-    const nextStatus = nextLevel ? "pending_manager" : "pending_ceo";
+    const nextStatus = nextLevel ? "pending_manager" : isHrRequest(item) ? "pending_hr_finance" : "pending_ceo";
     const nextNote = nextLevel
       ? `Manager Level ${currentLevelNumber} approved → Manager Level ${currentLevelNumber + 1}`
+      : isHrRequest(item)
+      ? `Manager Level ${currentLevelNumber} approved → HR Finance`
       : `Manager Level ${currentLevelNumber} approved → CEO`;
 
     setOnetime((p) =>
@@ -209,9 +278,9 @@ function ApprovalsOneTimeView({
               {
                 ...o,
                 currentManagerLevel: nextLevel ? currentLevelNumber + 1 : currentLevelNumber,
-                currentApproverId: nextLevel ? nextLevel.userId : "ceo",
-                currentApproverName: nextLevel ? nextLevel.userName || nextLevel.userEmail || "" : "CEO",
-                currentApproverRole: nextLevel ? `Manager Level ${currentLevelNumber + 1}` : "CEO",
+                currentApproverId: nextLevel ? nextLevel.userId : isHrRequest(o) ? "hr_finance" : "ceo",
+                currentApproverName: nextLevel ? nextLevel.userName || nextLevel.userEmail || "" : isHrRequest(o) ? "HR Finance" : "CEO",
+                currentApproverRole: nextLevel ? `Manager Level ${currentLevelNumber + 1}` : isHrRequest(o) ? "HR Finance" : "CEO",
                 managerApprovals: [
                   ...(o.managerApprovals || []),
                   {
@@ -239,6 +308,13 @@ function ApprovalsOneTimeView({
         `"${item?.title}" needs approval from ${nextLevel.userName || nextLevel.userEmail || "next manager"}`
       );
       showNotif(`Approved → Manager Level ${currentLevelNumber + 1}!`);
+    } else if (isHrRequest(item)) {
+      addNotif?.(
+        "approval_required",
+        "HR Finance Review Needed",
+        `"${item?.title}" needs HR Finance review`
+      );
+      showNotif("Approved → HR Finance!");
     } else {
       addNotif?.(
         "approval_required",
@@ -247,6 +323,88 @@ function ApprovalsOneTimeView({
       );
       showNotif("Approved → CEO!");
     }
+  };
+
+  const approveHRFinance = (id) => {
+    const item = (onetime || []).find((o) => o.id === id);
+    const level1 = getHRApprovalLevel(0);
+
+    const nextStatus = level1 ? "pending_hr_manager_1" : "pending_ceo";
+    const nextName = level1?.userName || level1?.userEmail || "CEO";
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? addHistory(
+              {
+                ...o,
+                hrFinanceApproval: { by: currentUser?.name, date: today() },
+                currentApproverId: level1?.userId || "ceo",
+                currentApproverEmail: level1?.userEmail || "",
+                currentApproverName: nextName,
+                currentApproverRole: level1 ? "HR Level 1" : "CEO",
+              },
+              nextStatus,
+              level1 ? "HR Finance reviewed → HR Level 1 approval" : "HR Finance reviewed → CEO approval"
+            )
+          : o
+      )
+    );
+    addNotif?.("approval_required", level1 ? "HR Level 1 Approval Needed" : "CEO Approval Needed", `"${item?.title}" needs approval from ${nextName}`);
+    showNotif(level1 ? "HR Finance approved → HR Level 1!" : "HR Finance approved → CEO!");
+  };
+
+  const approveHRManager1 = (id) => {
+    const item = (onetime || []).find((o) => o.id === id);
+    const level2 = getHRApprovalLevel(1);
+
+    const nextStatus = level2 ? "pending_hr_manager_2" : "pending_ceo";
+    const nextName = level2?.userName || level2?.userEmail || "CEO";
+
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? addHistory(
+              {
+                ...o,
+                hrManager1Approval: { by: currentUser?.name, byId: currentUser?.id || currentUser?.uid, date: today() },
+                currentApproverId: level2?.userId || "ceo",
+                currentApproverEmail: level2?.userEmail || "",
+                currentApproverName: nextName,
+                currentApproverRole: level2 ? "HR Level 2" : "CEO",
+              },
+              nextStatus,
+              level2 ? "HR Level 1 approved → HR Level 2 approval" : "HR Level 1 approved → CEO approval"
+            )
+          : o
+      )
+    );
+    addNotif?.("approval_required", level2 ? "HR Level 2 Approval Needed" : "CEO Approval Needed", `"${item?.title}" needs approval from ${nextName}`);
+    showNotif(level2 ? "HR Level 1 approved → HR Level 2!" : "HR Level 1 approved → CEO!");
+  };
+
+  const approveHRManager2 = (id) => {
+    const item = (onetime || []).find((o) => o.id === id);
+    setOnetime((p) =>
+      p.map((o) =>
+        o.id === id
+          ? addHistory(
+              {
+                ...o,
+                hrManager2Approval: { by: currentUser?.name, byId: currentUser?.id || currentUser?.uid, date: today() },
+                currentApproverId: "ceo",
+                currentApproverEmail: "",
+                currentApproverName: "CEO",
+                currentApproverRole: "CEO",
+              },
+              "pending_ceo",
+              "HR Level 2 approved → CEO approval"
+            )
+          : o
+      )
+    );
+    addNotif?.("approval_required", "CEO Approval Needed", `"${item?.title}" needs CEO approval`);
+    showNotif("HR Level 2 approved → CEO!");
   };
 
   const approveCEO = (id) => {
@@ -287,7 +445,7 @@ function ApprovalsOneTimeView({
                 financeApproval: { by: currentUser?.name, date: today() },
               },
               "pending_schedule_preparation",
-              "Finance approved → Schedule preparation"
+              isHrRequest(o) ? "Finance Manager approved → HR Finance schedule preparation" : "Finance approved → Schedule preparation"
             )
           : o
       )
@@ -538,7 +696,9 @@ function ApprovalsOneTimeView({
 
 const rejectOneTime = (id) => {
   const item = (onetime || []).find((o) => o.id === id);
-  const reason = String(rejectReason || "").trim();
+  const modalReason = rejectModal?.reason;
+  const domReason = typeof document !== "undefined" ? document.getElementById("rejectReasonText")?.value : "";
+  const reason = String(rejectReason || modalReason || domReason || "").trim();
 
   if (!reason) {
     showNotif("Please write the rejection reason before rejecting.", "error");
@@ -602,7 +762,7 @@ const rejectOneTime = (id) => {
                 bankRelease: {
                   ...bankForm,
                   paidBy: currentUser?.name || "Finance",
-                  paidByRole: "finance",
+                  paidByRole: userRole,
                 },
                 receiptUploaded: {
                   files: receiptFiles.map((f) => ({
@@ -754,7 +914,7 @@ const rejectOneTime = (id) => {
     const [open, setOpen] = useState(false);
     const sc = statusConfig[r.status] || { label: r.status, color: C.muted };
     const pc = priorityConfig[r.priority] || priorityConfig.medium;
-    const showAttachments = canSeeAll || canManager || canCEO || canFinance;
+    const showAttachments = canSeeAll || canManager || canCEO || canFinance || canHRFinance || userIsCurrentApprover(r);
     const displayRequestedDate =
       r.financeSchedule?.approvedDate || r.requestedPaymentDate || r.dueDate;
     const requestedFor = r.department || "-";
@@ -1155,7 +1315,10 @@ const rejectOneTime = (id) => {
 
             {canApprove && onRejectFn && (
               <button
-                onClick={() => setRejectModal({ id: r.id, fn: onRejectFn })}
+                onClick={() => {
+                  setRejectReason("");
+                  setRejectModal({ id: r.id, fn: onRejectFn, reason: "" });
+                }}
                 style={{
                   fontSize: 12,
                   padding: "6px 16px",
@@ -1234,6 +1397,13 @@ const rejectOneTime = (id) => {
     </div>
   );
 
+
+  const canPrepareScheduleFor = (r) => isHrRequest(r) ? canHRFinance : canFinance;
+  const canInitiateReleaseFor = (r) => isHrRequest(r) ? canHRFinance : canFinance;
+  const canPayFor = (r) => isHrRequest(r) ? canHRFinance : canFinance;
+  const canManageInvoiceUploadFor = (r) => isHrRequest(r) ? canHRFinance : canFinance;
+  const canVerifyFinanceFor = (r) => canFinance;
+
   const actionStages = [
     {
       label: "Manager Approval",
@@ -1242,6 +1412,36 @@ const rejectOneTime = (id) => {
       items: queues.pending_manager,
       canApprove: canManager,
       onApprove: approveManager,
+      btnLabel: "✓ Approve",
+      onRejectFn: rejectOneTime,
+    },
+    {
+      label: "HR Finance Review",
+      description: "HR Finance reviews HR-related requests before HR managers.",
+      color: "#06B6D4",
+      items: queues.pending_hr_finance,
+      canApprove: canHRFinance,
+      onApprove: approveHRFinance,
+      btnLabel: "✓ HR Finance Approve",
+      onRejectFn: rejectOneTime,
+    },
+    {
+      label: "HR Level 1 Approval",
+      description: "First HR department approval level configured in Departments → HR.",
+      color: "#A78BFA",
+      items: queues.pending_hr_manager_1,
+      canApprove: true,
+      onApprove: approveHRManager1,
+      btnLabel: "✓ Approve",
+      onRejectFn: rejectOneTime,
+    },
+    {
+      label: "HR Level 2 Approval",
+      description: "Second HR department approval level configured in Departments → HR.",
+      color: "#7C3AED",
+      items: queues.pending_hr_manager_2,
+      canApprove: true,
+      onApprove: approveHRManager2,
       btnLabel: "✓ Approve",
       onRejectFn: rejectOneTime,
     },
@@ -1256,8 +1456,8 @@ const rejectOneTime = (id) => {
       onRejectFn: rejectOneTime,
     },
     {
-      label: "Finance Approval",
-      description: "Finance review before scheduling the payment.",
+      label: "Finance Manager Approval",
+      description: "Finance Manager review before scheduling the payment.",
       color: C.gold,
       items: queues.pending_finance,
       canApprove: canFinance,
@@ -1275,7 +1475,7 @@ const rejectOneTime = (id) => {
       btnLabel: "",
       onRejectFn: null,
       extra: (r) =>
-        canFinance && (
+        canPrepareScheduleFor(r) && (
           <button
             className="btn-primary"
             onClick={() => openScheduleModal(r)}
@@ -1310,7 +1510,7 @@ const rejectOneTime = (id) => {
       description: "Start the payment release process.",
       color: C.accent,
       items: queues.pending_release_initiation,
-      canApprove: canFinance,
+      canApprove: canFinance || canHRFinance,
       onApprove: initiateRelease,
       btnLabel: "✓ Initiate Release",
       onRejectFn: null,
@@ -1355,7 +1555,7 @@ const rejectOneTime = (id) => {
       btnLabel: "",
       onRejectFn: null,
       extra: (r) =>
-        canFinance && (
+        canPayFor(r) && (
           <>
             <button
               className="btn-primary"
@@ -1384,7 +1584,7 @@ const rejectOneTime = (id) => {
       btnLabel: "",
       onRejectFn: null,
       extra: (r) =>
-        canFinance && (
+        canManageInvoiceUploadFor(r) && (
           <div style={{ display: "grid", gap: 6 }}>
             {missingPurchaseInvoice(r) && (
               <button
@@ -1465,7 +1665,7 @@ const rejectOneTime = (id) => {
   const visibleStages = actionStages.filter((stage) => stage.items.length > 0);
 
   const totalPending = visibleStages.reduce((sum, stage) => sum + stage.items.length, 0);
-  const hasNoApprovals = !canSeeAll && !canManager && !canCEO && !canFinance;
+  const hasNoApprovals = !canSeeAll && totalPending === 0;
 
   return (
     <div>
@@ -1587,7 +1787,7 @@ const rejectOneTime = (id) => {
       )}
 
       {rejectModal && (
-        <div className="overlay" onClick={() => setRejectModal(null)}>
+        <div className="overlay" onClick={() => { setRejectModal(null); setRejectReason(""); }}>
           <div
             className="modal"
             style={{ maxWidth: 420 }}
@@ -1607,10 +1807,15 @@ const rejectOneTime = (id) => {
               This reason will be visible to the submitter.
             </div>
             <textarea
+              id="rejectReasonText"
               className="inp"
               rows={4}
               value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setRejectReason(value);
+                setRejectModal((prev) => (prev ? { ...prev, reason: value } : prev));
+              }}
               placeholder="Reason for rejection..."
             />
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
@@ -1629,7 +1834,7 @@ const rejectOneTime = (id) => {
               >
                 Confirm
               </button>
-              <button className="btn-ghost" onClick={() => setRejectModal(null)}>
+              <button className="btn-ghost" onClick={() => { setRejectModal(null); setRejectReason(""); }}>
                 Cancel
               </button>
             </div>

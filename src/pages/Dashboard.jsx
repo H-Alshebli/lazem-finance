@@ -10,6 +10,9 @@ function Dashboard({
   dueThisWeek = 0,
   totalPendingApproval = 0,
   setView,
+  userRole,
+  deptConfig = [],
+  currentUser = null,
 }) {
   const [activeTab, setActiveTab] = useState("overview");
 
@@ -217,6 +220,33 @@ function Dashboard({
     "pending_invoice_review",
   ];
 
+  const isHrRequest = (r) => String(r?.requestFlowType || "normal") === "hr";
+  const currentUserKeys = [currentUser?.uid, currentUser?.id, currentUser?.email, currentUser?.name]
+    .filter(Boolean)
+    .map(normalizeText);
+  const userMatches = (value) => {
+    if (!value) return false;
+    if (typeof value === "object") {
+      return userMatches(value.userId) || userMatches(value.id) || userMatches(value.uid) || userMatches(value.email) || userMatches(value.userEmail) || userMatches(value.value);
+    }
+    return currentUserKeys.includes(normalizeText(value));
+  };
+  const hrDepartment = (deptConfig || []).find((d) => normalizeText(d.id || d.name) === "hr");
+  const hrManagerApprovers = Array.isArray(hrDepartment?.managerApprovers) ? hrDepartment.managerApprovers : [];
+  const isHrDepartmentApprover = hrManagerApprovers.some(userMatches);
+
+  const dashboardOnetime = useMemo(() => {
+    if (userRole === "hr_finance") return (onetime || []).filter(isHrRequest);
+    if (isHrDepartmentApprover) return (onetime || []).filter(isHrRequest);
+    if (userRole === "finance") {
+      return (onetime || []).filter((r) => {
+        if (!isHrRequest(r)) return true;
+        return ["pending_finance", "pending_schedule_verified", "pending_release_verify", "pending_invoice_review", "closed_paid", "rejected"].includes(r.status);
+      });
+    }
+    return onetime || [];
+  }, [onetime, userRole, isHrDepartmentApprover]);
+
   const tabs = [
     { id: "overview", label: "Overview" },
     { id: "companies", label: "Companies" },
@@ -226,18 +256,18 @@ function Dashboard({
   ];
 
   const dashboardStats = useMemo(() => {
-    const totalRequests = onetime.length;
+    const totalRequests = dashboardOnetime.length;
 
-    const paidRequests = onetime.filter((r) => r.status === "closed_paid");
-    const rejectedRequests = onetime.filter((r) => r.status === "rejected");
-    const activeRequests = onetime.filter((r) =>
+    const paidRequests = dashboardOnetime.filter((r) => r.status === "closed_paid");
+    const rejectedRequests = dashboardOnetime.filter((r) => r.status === "rejected");
+    const activeRequests = dashboardOnetime.filter((r) =>
       activeStatuses.includes(r.status)
     );
 
-    const pendingAmountRequests = onetime.filter((r) => isPendingAmountItem(r));
-    const overdueRequests = onetime.filter((r) => isOverdueItem(r));
+    const pendingAmountRequests = dashboardOnetime.filter((r) => isPendingAmountItem(r));
+    const overdueRequests = dashboardOnetime.filter((r) => isOverdueItem(r));
 
-    const totalRequested = onetime.reduce((sum, r) => sum + money(r.amount), 0);
+    const totalRequested = dashboardOnetime.reduce((sum, r) => sum + money(r.amount), 0);
     const totalPaid = paidRequests.reduce((sum, r) => sum + money(r.amount), 0);
     const totalRejected = rejectedRequests.reduce((sum, r) => sum + money(r.amount), 0);
     const totalPendingAmount = pendingAmountRequests.reduce(
@@ -249,36 +279,36 @@ function Dashboard({
       0
     );
 
-    const dueToday = onetime.filter((r) => {
+    const dueToday = dashboardOnetime.filter((r) => {
       if (!isPendingAmountItem(r)) return false;
       const d = diffDaysFromToday(getScheduleDate(r));
       return d === 0;
     });
 
-    const dueThisWeekItems = onetime.filter((r) => {
+    const dueThisWeekItems = dashboardOnetime.filter((r) => {
       if (!isPendingAmountItem(r)) return false;
       const d = diffDaysFromToday(getScheduleDate(r));
       return d !== null && d >= 0 && d <= 7;
     });
 
-    const dueThisMonth = onetime.filter((r) => {
+    const dueThisMonth = dashboardOnetime.filter((r) => {
       if (!isPendingAmountItem(r)) return false;
       const d = diffDaysFromToday(getScheduleDate(r));
       return d !== null && d >= 0 && d <= 30;
     });
 
-    const missingQuotation = onetime.filter(
+    const missingQuotation = dashboardOnetime.filter(
       (r) => !Array.isArray(r.invoices) || r.invoices.length === 0
     ).length;
 
-    const missingReceipt = onetime.filter(
+    const missingReceipt = dashboardOnetime.filter(
       (r) =>
         ["pending_invoice_upload", "pending_invoice_review", "closed_paid"].includes(
           r.status
         ) && !r.receiptUploaded
     ).length;
 
-    const missingPurchaseInvoice = onetime.filter(
+    const missingPurchaseInvoice = dashboardOnetime.filter(
       (r) =>
         ["pending_invoice_upload", "pending_invoice_review", "closed_paid"].includes(r.status) &&
         (!Array.isArray(r.purchaseInvoices) ||
@@ -341,7 +371,7 @@ function Dashboard({
       }
     };
 
-    onetime.forEach((r) => {
+    dashboardOnetime.forEach((r) => {
       const dept = r.department || "Unassigned";
       const category = r.category || "Uncategorized";
       const method = getPaymentMethod(r);
@@ -428,7 +458,7 @@ function Dashboard({
         (a, b) => b.totalAmount - a.totalAmount
       ),
     };
-  }, [onetime]);
+  }, [dashboardOnetime]);
 
   const barColors = [
     C.accent,
@@ -1235,7 +1265,7 @@ const GroupDetails = ({ rows, groupLabel = "Group" }) => (
     title="Request Explorer"
     subtitle="All one-time payment requests with payment details"
   >
-    <RequestDetailsTable items={onetime} showCompany={true} />
+    <RequestDetailsTable items={dashboardOnetime} showCompany={true} />
   </Panel>
 )}
     </div>

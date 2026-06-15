@@ -6,6 +6,9 @@ const STATUS_TYPE_MAP = {
   pending_vp: "approval_required",
   pending_hr: "approval_required",
   pending_ceo: "approval_required",
+  pending_hr_finance: "approval_required",
+  pending_hr_manager_1: "approval_required",
+  pending_hr_manager_2: "approval_required",
   pending_ceo_1: "approval_required",
   pending_ceo_2: "approval_required",
   pending_schedule_ceo: "approval_required",
@@ -83,6 +86,13 @@ function normalizeEmail(email) {
 
 function normalizeRole(role) {
   return normalizeText(role);
+}
+
+function isHrRequest(item) {
+  const flowType = String(
+    item?.requestFlowType || item?.approvalFlowType || item?.flowType || item?.requestType || "normal"
+  ).toLowerCase();
+  return flowType === "hr" || flowType === "hr_related" || flowType === "hr-related";
 }
 
 function getUserEmail(user) {
@@ -284,6 +294,39 @@ function managerLevels(item, allUsers = [], deptConfig = []) {
   return [];
 }
 
+function hrDepartmentConfig(deptConfig = []) {
+  return (deptConfig || []).find((d) => normalizeText(d?.id || d?.name) === "hr") || null;
+}
+
+function hrManagerLevels(allUsers = [], deptConfig = []) {
+  const dept = hrDepartmentConfig(deptConfig);
+  if (!dept) return [];
+
+  const rawLevels = Array.isArray(dept.managerApprovers)
+    ? dept.managerApprovers
+    : Array.isArray(dept.approvalLevels)
+    ? dept.approvalLevels
+    : [];
+
+  return rawLevels
+    .map((level, index) => {
+      const user = matchUser(allUsers, level);
+      const fallbackEmail = level?.userEmail || level?.email || "";
+      const fallbackId = level?.userId || level?.id || level?.uid || level?.value || level || "";
+      if (!user && !fallbackEmail) return null;
+
+      return {
+        ...(user || {}),
+        id: getUserId(user) || fallbackId,
+        uid: user?.uid,
+        name: user?.name || level?.userName || level?.name || `HR Level ${index + 1}`,
+        email: getUserEmail(user) || fallbackEmail,
+        pipelineRole: `HR Level ${index + 1}`,
+      };
+    })
+    .filter((u) => getUserEmail(u));
+}
+
 function deptUsers({ item, roleKey, allUsers, deptConfig }) {
   const dept = findDepartment(item, deptConfig);
 
@@ -405,6 +448,28 @@ function responsibleRecipientsForStatus(item, status, allUsers, deptConfig) {
     return currentManagerRecipient(item, allUsers, deptConfig);
   }
 
+  if (status === "pending_hr_finance") {
+    return roleUsers("hr_finance", allUsers).map((u) => ({ ...u, pipelineRole: "HR Finance" }));
+  }
+
+  if (status === "pending_hr_manager_1") {
+    const current = matchUser(allUsers, item?.currentApproverId) || matchUser(allUsers, item?.currentApproverEmail);
+    if (current) return [{ ...current, pipelineRole: "HR Level 1" }];
+    const levels = hrManagerLevels(allUsers, deptConfig);
+    return levels[0] ? [levels[0]] : [];
+  }
+
+  if (status === "pending_hr_manager_2") {
+    const current = matchUser(allUsers, item?.currentApproverId) || matchUser(allUsers, item?.currentApproverEmail);
+    if (current) return [{ ...current, pipelineRole: "HR Level 2" }];
+    const levels = hrManagerLevels(allUsers, deptConfig);
+    return levels[1] ? [levels[1]] : [];
+  }
+
+  if (isHrRequest(item) && ["pending_schedule_preparation", "pending_release_initiation", "pending_pay"].includes(status)) {
+    return roleUsers("hr_finance", allUsers).map((u) => ({ ...u, pipelineRole: "HR Finance" }));
+  }
+
   if (CEO_STATUSES.has(status)) {
     const deptCeo = deptUsers({ item, roleKey: "ceo", allUsers, deptConfig });
     const globalCeo = roleUsers("ceo", allUsers).map((u) => ({ ...u, pipelineRole: "CEO" }));
@@ -442,6 +507,11 @@ export function getPipelineRecipients({ item, allUsers = [], deptConfig = [] }) 
   if (requester) recipients.push({ ...requester, pipelineRole: "Requester" });
 
   recipients.push(...managerLevels(item, allUsers, deptConfig));
+
+  if (isHrRequest(item)) {
+    recipients.push(...roleUsers("hr_finance", allUsers).map((u) => ({ ...u, pipelineRole: "HR Finance" })));
+    recipients.push(...hrManagerLevels(allUsers, deptConfig));
+  }
 
   const finance = deptUsers({ item, roleKey: "finance", allUsers, deptConfig });
   if (finance.length) {

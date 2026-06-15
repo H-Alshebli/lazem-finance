@@ -111,12 +111,14 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
 
   const roleUserMap = useMemo(() => {
     return {
-      manager: userList.filter((u) => ["manager", "admin"].includes(u.role)),
+      // Manager approval levels can use managers from any department.
+      // This allows HR Level 2 to be a manager/executive who already manages another department.
+      manager: userList.filter((u) => ["manager", "executive", "ceo", "admin", "sub_admin"].includes(u.role)),
       vp: userList.filter((u) => ["vp", "admin"].includes(u.role)),
       hr: userList.filter((u) => ["hr", "admin"].includes(u.role)),
       finance: userList.filter((u) => ["finance", "admin"].includes(u.role)),
       staff: userList.filter((u) =>
-        ["staff", "manager", "finance", "vp", "hr", "admin", "ceo"].includes(u.role)
+        ["staff", "manager", "finance", "hr_finance", "vp", "hr", "executive", "sub_admin", "admin", "ceo"].includes(u.role)
       ),
     };
   }, [userList]);
@@ -539,7 +541,7 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                         Manager Approval Levels
                       </div>
                       <div style={{ fontSize: 10, color: C.muted }}>
-                        Add one or more manager levels. The request will move level by level before CEO approval.
+                        Add one or more manager levels. For HR, these levels are HR Level 1 and HR Level 2; the selected users can still keep their normal role/department.
                       </div>
                     </div>
                   </div>
@@ -1010,7 +1012,7 @@ function DepartmentsView({ deptConfig, setDeptConfig, showNotif, authUsers }) {
                   </select>
 
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 10 }}>
-                    A user should belong to only one department. When you save, the selected users’ Firestore profiles will also be updated with this department automatically.
+                    Staff members belong to this department. Approval-level users above do not need to be staff here, so HR Level 2 can still manage another department.
                   </div>
                 </div>
               </div>
