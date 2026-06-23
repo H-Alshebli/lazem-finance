@@ -85,6 +85,9 @@ export function AuthGate({ children }) {
   const [loginErr, setLoginErr] = useState("");
   const [regErr, setRegErr] = useState("");
   const [regSuccess, setRegSuccess] = useState("");
+  const [resetEmail, setResetEmail] = useState("");
+  const [resetErr, setResetErr] = useState("");
+  const [resetSuccess, setResetSuccess] = useState("");
   const [showPass, setShowPass] = useState(false);
 
   const isFirebaseMode = !!import.meta.env.VITE_FIREBASE_API_KEY;
@@ -119,6 +122,39 @@ export function AuthGate({ children }) {
     if (!user) return setLoginErr("No account found with this email.");
     if (user.password !== loginForm.password) return setLoginErr("Incorrect password.");
     setCurrentUser(user);
+  };
+
+  const handlePasswordReset = async () => {
+    setResetErr("");
+    setResetSuccess("");
+
+    const email = resetEmail.trim();
+    if (!email || !email.includes("@")) {
+      setResetErr("Enter a valid email address.");
+      return;
+    }
+
+    if (!isFirebaseMode || !AuthGate._firebaseResetPassword) {
+      setResetErr("Password reset is available after Firebase Authentication is connected.");
+      return;
+    }
+
+    try {
+      await AuthGate._firebaseResetPassword(email);
+      setResetSuccess(
+        "Password-reset email sent. Check your inbox and spam folder, then use the link to create a new password."
+      );
+    } catch (e) {
+      const msg =
+        e.code === "auth/invalid-email"
+          ? "Invalid email address."
+          : e.code === "auth/user-not-found"
+          ? "No account was found with this email address."
+          : e.code === "auth/too-many-requests"
+          ? "Too many requests. Please wait a few minutes and try again."
+          : "Could not send the reset email: " + (e.message || e.code);
+      setResetErr(msg);
+    }
   };
 
   const handleRegister = async () => {
@@ -286,7 +322,11 @@ export function AuthGate({ children }) {
             Lazem Finance Portal
           </div>
           <div style={{ fontSize: 13, color: MUTED }}>
-            {screen === "login" ? "Sign in to your account" : "Create a new account"}
+            {screen === "login"
+              ? "Sign in to your account"
+              : screen === "forgot"
+              ? "Reset your account password"
+              : "Create a new account"}
           </div>
         </div>
 
@@ -372,6 +412,21 @@ export function AuthGate({ children }) {
                       {showPass ? "🙈" : "👁"}
                     </button>
                   </div>
+                </div>
+
+                <div style={{ textAlign: "right", marginTop: -4 }}>
+                  <button
+                    className="auth-link"
+                    onClick={() => {
+                      setResetEmail(loginForm.email);
+                      setResetErr("");
+                      setResetSuccess("");
+                      setScreen("forgot");
+                    }}
+                    style={{ fontSize: 12 }}
+                  >
+                    Forgot password?
+                  </button>
                 </div>
 
                 {loginErr && (
@@ -474,6 +529,91 @@ export function AuthGate({ children }) {
                 >
                   Create one
                 </button>
+              </div>
+            </>
+          ) : screen === "forgot" ? (
+            <>
+              <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                Forgot password?
+              </div>
+              <div style={{ fontSize: 13, color: MUTED, lineHeight: 1.6, marginBottom: 24 }}>
+                Enter your work email address and we will send you a secure link to create a new password.
+              </div>
+
+              <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+                <div>
+                  <label
+                    style={{
+                      fontSize: 11,
+                      color: MUTED,
+                      display: "block",
+                      marginBottom: 6,
+                      fontWeight: 600,
+                      letterSpacing: 1,
+                    }}
+                  >
+                    EMAIL ADDRESS
+                  </label>
+                  <input
+                    className="auth-inp"
+                    type="email"
+                    placeholder="you@lazem.sa"
+                    value={resetEmail}
+                    autoFocus
+                    onChange={(e) => setResetEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handlePasswordReset()}
+                  />
+                </div>
+
+                {resetErr && (
+                  <div
+                    style={{
+                      background: RED + "18",
+                      border: `1px solid ${RED}44`,
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                      fontSize: 13,
+                      color: RED,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    ⚠ {resetErr}
+                  </div>
+                )}
+
+                {resetSuccess && (
+                  <div
+                    style={{
+                      background: GREEN + "18",
+                      border: `1px solid ${GREEN}44`,
+                      borderRadius: 8,
+                      padding: "10px 14px",
+                      fontSize: 13,
+                      color: GREEN,
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    ✓ {resetSuccess}
+                  </div>
+                )}
+
+                <button className="auth-btn" onClick={handlePasswordReset}>
+                  Send reset email
+                </button>
+
+                <div style={{ textAlign: "center", marginTop: 4 }}>
+                  <button
+                    className="auth-link"
+                    onClick={() => {
+                      setScreen("login");
+                      setLoginErr("");
+                      setResetErr("");
+                      setResetSuccess("");
+                    }}
+                  >
+                    ← Back to sign in
+                  </button>
+                </div>
               </div>
             </>
           ) : (

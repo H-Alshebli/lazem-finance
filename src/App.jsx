@@ -11,7 +11,8 @@ export default function App() {
   useEffect(() => {
     AuthGate._firebaseLogin    = auth.login;
     AuthGate._firebaseRegister = auth.register;
-  }, [auth.login, auth.register]);
+    AuthGate._firebaseResetPassword = auth.resetPassword;
+  }, [auth.login, auth.register, auth.resetPassword]);
 
   if (auth.isLoading) {
     return (

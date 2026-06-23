@@ -4,6 +4,7 @@ import {
   signInWithEmailAndPassword,
   signOut,
   onAuthStateChanged,
+  sendPasswordResetEmail,
 } from "firebase/auth";
 import { auth } from "../firebase/config";
 import {
@@ -62,6 +63,13 @@ export function AuthProvider({ children }) {
 
   const logout = () => signOut(auth);
 
+  const resetPassword = (email) =>
+    sendPasswordResetEmail(auth, email, {
+      // Returning users to the live portal after they finish choosing a new password.
+      url: window.location.origin,
+      handleCodeInApp: false,
+    });
+
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (user) => {
       setCurrentUser(user);
@@ -101,6 +109,7 @@ export function AuthProvider({ children }) {
     register,
     login,
     logout,
+    resetPassword,
     isLoading: loading,
   };
 
