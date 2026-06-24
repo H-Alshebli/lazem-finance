@@ -19,7 +19,13 @@ function InvoiceUpload({ invoices = [], onChange }) {
   const fileRef = useRef(null);
   const [uploading, setUploading] = useState(false);
 
-  const ACCEPT = ".pdf,.jpg,.jpeg,.png";
+  const ACCEPT = [
+    ".pdf",
+    ".jpg", ".jpeg", ".png",
+    ".doc", ".docx",
+    ".xls", ".xlsx", ".csv",
+    ".zip",
+  ].join(",");
   const safeInvoices = Array.isArray(invoices) ? invoices : [];
 
   const handleFiles = async (files) => {
@@ -102,8 +108,16 @@ function InvoiceUpload({ invoices = [], onChange }) {
       ? `${(b / 1024 / 1024).toFixed(1)}MB`
       : `${Math.round(b / 1024)}KB`;
 
-  const getIcon = (type) =>
-    type?.includes("pdf") ? "📄" : type?.includes("image") ? "🖼" : "📎";
+  const getIcon = (type = "", name = "") => {
+    const extension = name.split(".").pop()?.toLowerCase();
+
+    if (type.includes("pdf") || extension === "pdf") return "📄";
+    if (type.includes("image")) return "🖼";
+    if (["doc", "docx"].includes(extension)) return "📝";
+    if (["xls", "xlsx", "csv"].includes(extension)) return "📊";
+    if (extension === "zip") return "🗜️";
+    return "📎";
+  };
 
   return (
     <div>
@@ -159,7 +173,7 @@ function InvoiceUpload({ invoices = [], onChange }) {
             "Uploading..."
           ) : (
             <>
-              Drop PDF, JPG or PNG · or{" "}
+              Drop PDF, images, Word, Excel or ZIP · or{" "}
               <span style={{ color: C.accent }}>click to browse</span>
             </>
           )}
@@ -185,7 +199,7 @@ function InvoiceUpload({ invoices = [], onChange }) {
                   fontSize: 11,
                 }}
               >
-                <span>{getIcon(inv.type)}</span>
+                <span>{getIcon(inv.type, inv.name)}</span>
 
                 {fileUrl ? (
                   <a
